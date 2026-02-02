@@ -1,0 +1,184 @@
+# 每日文章聚合器配置文件
+# Daily Article Aggregator Configuration
+
+# 数据源配置
+sources:
+  arxiv:
+    enabled: true
+    categories:
+      - cs.AI      # 人工智能
+      - cs.CL      # 计算语言学
+      - cs.CR      # 密码学与安全
+    keywords:
+      - security
+      - safety
+      - llm
+    use_llm_filter: false
+    max_results: 100
+  
+  rss:
+    enabled: true
+    # 可选择使用单个OPML或多个OPML文件
+    opml_path: "feeds.opml"
+    # 额外的OPML文件列表（用于评估）
+    opml_files:
+      - "rss/CyberSecurityRSS.opml"        # 网络安全RSS（完整版）
+      - "rss/Chinese-Security-RSS.opml"    # 中文安全RSS
+      - "rss/awesome-security-feed.opml"   # 精选安全订阅源
+      - "rss/chinese-independent-blogs.opml" # 中文独立博客
+      - "rss/SecureRss.opml"               # 安全RSS（大型）
+      - "rss/wechatRSS.opml"               # 微信公众号RSS
+
+# AI配置（所有值都支持环境变量覆盖）
+ai:
+  enabled: true
+  api_base: "${OPENAI_API_BASE:https://api.openai.com/v1}"
+  api_key: "${OPENAI_API_KEY}"
+  model: "${OPENAI_MODEL:gpt-4o-mini}"
+  max_tokens: 2000
+  temperature: 0.7
+  timeout: 60
+  translate: true
+  system_prompt: |
+    你是一名专业的技术文档分析师，擅长阅读和总结技术文章。
+    你的任务是：
+    1. 提取文章的核心观点和关键信息
+    2. 生成简洁准确的中文摘要
+    3. 为文章分配合适的技术分类
+    
+    请确保摘要简洁明了，突出文章的主要贡献和价值。
+
+# 飞书配置
+feishu:
+  webhook_url: "${FEISHU_WEBHOOK_URL}"
+
+# 飞书多维表格配置（用于数据可视化）
+feishu_bitable:
+  enabled: true
+  app_id: "${FEISHU_APP_ID}"
+  app_secret: "${FEISHU_APP_SECRET}"
+  app_token: "${FEISHU_BITABLE_APP_TOKEN:}"  # 首次运行自动创建
+  table_id: "${FEISHU_BITABLE_TABLE_ID:}"    # 首次运行自动创建
+
+# 代理配置
+proxy:
+  url: ""
+  enabled: false
+
+# 调度配置
+schedule:
+  time: "07:00"
+  timezone: "Asia/Shanghai"
+
+# 断点续传配置
+# Checkpoint/Resume Configuration
+checkpoint:
+  enabled: true                    # 是否启用断点续传
+  dir: "data/checkpoints"          # 检查点文件存储目录
+  max_age_hours: 24                # 检查点最大保留时间（小时）
+  save_interval: 10                # 自动保存间隔（每处理多少条后保存）
+
+# 数据库配置
+database:
+  path: "data/articles.db"
+
+# 内容处理配置
+content:
+  max_length: 500000 # 最大内容长度（字符）
+  truncation_marker: "\n\n... [内容已截断]"
+
+# 新数据源配置
+# New Data Sources Configuration
+data_sources:
+  dblp:
+    enabled: true
+    conferences:
+      - sp      # IEEE S&P
+      - ccs     # ACM CCS
+      - uss     # USENIX Security
+      - ndss    # NDSS
+    timeout: 30
+  
+  nvd:
+    enabled: true
+    api_key: "${NVD_API_KEY:}"  # 可选，有 key 速率更高
+    days_back: 7
+    timeout: 60
+  
+  kev:
+    enabled: true
+    days_back: 30
+    timeout: 30
+  
+  huggingface:
+    enabled: true
+    timeout: 30
+  
+  pwc:
+    enabled: true
+    limit: 50
+    timeout: 30
+  
+  blogs:
+    enabled: true
+    sources:
+      - openai
+      - deepmind
+      - anthropic
+    timeout: 30
+
+# 漏洞过滤配置
+# Vulnerability Filter Configuration
+vulnerability_filter:
+  enabled: true
+  github_star_threshold: 1000
+  ip_asset_threshold: 300
+  enable_ai_assessment: true
+  github_token: "${GITHUB_TOKEN:}"
+
+# 分级推送配置
+# Tiered Push Configuration
+tiered_push:
+  enabled: true
+  level1_threshold: 0.10  # 前 10%
+  level2_threshold: 0.40  # 10%-40%
+  # level3 为剩余部分 (40%-100%)
+
+# 优先级评分配置
+# Priority Scoring Configuration
+priority_scoring:
+  enabled: true
+  source_weights:
+    kev: 1.5      # KEV 漏洞权重更高
+    nvd: 1.2
+    dblp: 1.3     # 顶会论文权重更高
+    huggingface: 1.1
+    pwc: 1.1
+    blog: 1.0
+    arxiv: 1.0
+    rss: 0.8
+
+# 话题聚合配置
+# Topic Aggregation Configuration
+topic_aggregation:
+  enabled: true                     # 启用话题聚合
+  similarity_threshold: 0.7         # 相似度阈值（0-1）
+  aggregation_threshold: 3          # 聚合阈值（达到此数量触发综述）
+  time_window_days: 7               # 时间窗口（天）
+  title_weight: 0.6                 # 标题权重
+  keyword_weight: 0.4               # 关键词权重
+  use_ai_similarity: true           # 使用 AI 计算相似度（推荐）
+  embedding_model: "text-embedding-3-small"  # Embedding 模型
+  # 黑名单域名（低质量来源）
+  blacklist_domains:
+    - csdn.net
+    - zhihu.com
+    - jianshu.com
+    - blog.51cto.com
+  # 可信来源（高质量来源）
+  trusted_sources:
+    - arxiv.org
+    - github.com
+    - openai.com
+    - anthropic.com
+    - deepmind.com

@@ -1,0 +1,53 @@
+# 每日文章聚合器依赖
+# Daily Article Aggregator Dependencies
+
+# 配置管理
+PyYAML>=6.0.1
+python-dotenv>=1.0.0
+
+# HTTP请求
+requests>=2.31.0
+aiohttp>=3.9.0
+
+# RSS解析
+feedparser>=6.0.10
+
+# arXiv API
+arxiv>=2.1.0
+
+# HTML转Markdown
+markitdown>=0.0.1a2
+beautifulsoup4>=4.12.0
+lxml>=5.1.0
+
+# 反爬 - Playwright无头浏览器
+playwright>=1.40.0
+
+# 数据库
+# SQLite内置于Python标准库
+
+# 文本相似度
+# difflib - Python标准库，无需安装
+
+# 中文分词
+jieba>=0.42.1
+
+# 定时任务
+schedule>=1.2.0
+
+# OpenAI API
+openai>=1.12.0
+
+# 日期时间处理
+python-dateutil>=2.8.2
+
+# 测试框架
+pytest>=8.0.0
+hypothesis>=6.98.0
+
+# 类型检查（可选）
+# mypy>=1.8.0
+
+# 代码格式化（可选）
+# black>=24.1.0
+# isort>=5.13.0

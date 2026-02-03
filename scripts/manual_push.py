@@ -194,13 +194,13 @@ def manual_push(config: dict, db_path: str, limit: int = None, batch_size: int =
     
     # 使用 TieredPusher 分级推送
     tiered_config = config.get('tiered_push', {})
+    bot = FeishuBot(webhook_url)
+    
     if tiered_config.get('enabled', True):
-        bot = FeishuBot(webhook_url)
-        pusher = TieredPusher(bot, tiered_config)
+        pusher = TieredPusher(tiered_config, feishu_bot=bot)
         success = pusher.push_articles(unpushed)
     else:
         # 直接推送
-        bot = FeishuBot(webhook_url)
         success = bot.push_articles(unpushed, batch_size=batch_size)
     
     if success:

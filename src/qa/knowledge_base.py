@@ -9,7 +9,16 @@ Requirements:
 
 import logging
 import os
+import sys
 from typing import Any
+
+# ChromaDB 需要 sqlite3 >= 3.35.0，某些系统版本过低
+# 使用 pysqlite3 替换标准库的 sqlite3
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    pass  # 如果没有安装 pysqlite3，使用系统自带的 sqlite3
 
 import chromadb
 from chromadb.config import Settings

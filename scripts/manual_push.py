@@ -5,13 +5,14 @@
 支持：
 1. 查看数据库中的文章状态
 2. 重置文章推送状态
-3. 手动触发推送
+3. 手动触发推送（使用 SmartSelector 智能筛选）
 
 Usage:
     python scripts/manual_push.py --status           # 查看状态
     python scripts/manual_push.py --reset 100        # 重置最近100篇为未推送
-    python scripts/manual_push.py --push             # 推送未推送的文章
-    python scripts/manual_push.py --push --limit 20  # 只推送20篇
+    python scripts/manual_push.py --push             # 推送未推送的文章（智能筛选）
+    python scripts/manual_push.py --push --limit 50  # 推送50篇（智能筛选）
+    python scripts/manual_push.py --push --no-smart  # 不使用智能筛选
 """
 
 import argparse
@@ -26,6 +27,8 @@ sys.path.insert(0, str(project_root))
 from src.config import load_config
 from src.bots.feishu_bot import FeishuBot
 from src.repository import ArticleRepository
+from src.pushers.smart_selector import SmartSelector
+from src.pushers.tiered_pusher import TieredPusher
 
 # 配置日志
 logging.basicConfig(
@@ -61,9 +64,34 @@ def show_status(db_path: str):
     print(f"已推送: {pushed}")
     print(f"未推送: {unpushed}")
     
+    # 按来源统计未推送
+    cursor.execute("""
+        SELECT source_type, COUNT(*) as count 
+        FROM articles 
+        WHERE is_pushed = 0 
+        GROUP BY source_type
+        ORDER BY count DESC
+    """)
+    source_stats = cursor.fetchall()
+    
+    if source_stats:
+        print("\n未推送文章按来源:")
+        for row in source_stats:
+            source = row['source_type'] or 'unknown'
+            print(f"  {source}: {row['count']} 篇")
+    
+    # 有摘要的未推送文章
+    cursor.execute("""
+        SELECT COUNT(*) as count 
+        FROM articles 
+        WHERE is_pushed = 0 AND (zh_summary IS NOT NULL AND zh_summary != '')
+    """)
+    with_summary = cursor.fetchone()['count']
+    print(f"\n有中文摘要的未推送: {with_summary} 篇")
+    
     # 最近的文章
     cursor.execute("""
-        SELECT title, source, is_pushed, fetched_at 
+        SELECT title, source_type, is_pushed, fetched_at 
         FROM articles 
         ORDER BY fetched_at DESC 
         LIMIT 5
@@ -75,8 +103,8 @@ def show_status(db_path: str):
         for row in rows:
             status = "✅" if row['is_pushed'] else "⏳"
             title = row['title'][:40] + "..." if len(row['title']) > 40 else row['title']
-            print(f"  {status} {title}")
-            print(f"     来源: {row['source']}, 时间: {row['fetched_at']}")
+            source_type = row['source_type'] or 'unknown'
+            print(f"  {status} [{source_type}] {title}")
     
     repo.close()
 
@@ -117,7 +145,7 @@ def reset_push_status(db_path: str, count: int):
     repo.close()
 
 
-def manual_push(config: dict, db_path: str, limit: int = None, batch_size: int = 10):
+def manual_push(config: dict, db_path: str, limit: int = None, batch_size: int = 10, use_smart: bool = True):
     """手动推送文章"""
     # 获取 Webhook URL
     feishu_config = config.get('feishu', {})
@@ -136,15 +164,44 @@ def manual_push(config: dict, db_path: str, limit: int = None, batch_size: int =
         repo.close()
         return True
     
-    # 限制数量
-    if limit:
-        unpushed = unpushed[:limit]
+    print(f"\n数据库中有 {len(unpushed)} 篇未推送文章")
+    
+    # 使用 SmartSelector 智能筛选
+    if use_smart:
+        smart_config = config.get('smart_selector', {})
+        if limit:
+            smart_config['max_articles'] = limit
+        
+        selector = SmartSelector(smart_config)
+        selected = selector.select_articles(unpushed)
+        
+        # 打印筛选摘要
+        summary = selector.generate_daily_summary(selected)
+        print(f"\n{summary}")
+        
+        unpushed = selected
+    else:
+        # 不使用智能筛选，直接限制数量
+        if limit:
+            unpushed = unpushed[:limit]
+    
+    if not unpushed:
+        print("智能筛选后没有符合条件的文章")
+        repo.close()
+        return True
     
     print(f"\n准备推送 {len(unpushed)} 篇文章")
     
-    # 创建机器人并推送
-    bot = FeishuBot(webhook_url)
-    success = bot.push_articles(unpushed, batch_size=batch_size)
+    # 使用 TieredPusher 分级推送
+    tiered_config = config.get('tiered_push', {})
+    if tiered_config.get('enabled', True):
+        bot = FeishuBot(webhook_url)
+        pusher = TieredPusher(bot, tiered_config)
+        success = pusher.push_articles(unpushed)
+    else:
+        # 直接推送
+        bot = FeishuBot(webhook_url)
+        success = bot.push_articles(unpushed, batch_size=batch_size)
     
     if success:
         # 标记为已推送
@@ -192,6 +249,11 @@ def main():
         default=10,
         help='每批推送的文章数量 (默认: 10)'
     )
+    parser.add_argument(
+        '--no-smart',
+        action='store_true',
+        help='不使用智能筛选，直接推送'
+    )
     
     args = parser.parse_args()
     
@@ -214,7 +276,7 @@ def main():
         reset_push_status(db_path, args.reset)
     
     if args.push:
-        manual_push(config, db_path, args.limit, args.batch_size)
+        manual_push(config, db_path, args.limit, args.batch_size, use_smart=not args.no_smart)
     
     # 如果没有指定任何操作，显示帮助
     if not (args.status or args.reset or args.push):

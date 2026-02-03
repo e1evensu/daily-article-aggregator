@@ -105,34 +105,59 @@ class SmartSelector:
         
         for article in articles:
             url = article.get('url', '')
-            score = scores.get(url, 50)
+            score = scores.get(url, 50)  # 默认50分
             
             # 检查是否有有效内容
-            has_content = bool(
+            has_summary = bool(
                 article.get('zh_summary') or 
-                article.get('summary') or 
+                article.get('summary')
+            )
+            has_content = bool(
                 article.get('content') or
                 article.get('description') or
                 article.get('short_description')
             )
             
-            # KEV 漏洞始终保留（在野利用）
             source_type = article.get('source_type', '')
+            
+            # KEV 漏洞始终保留（在野利用）
             if source_type == 'kev':
                 result.append(article)
                 continue
             
-            # NVD 漏洞需要高分
+            # NVD 漏洞需要高 CVSS
             if source_type == 'nvd':
                 cvss = article.get('cvss_score', 0) or 0
                 if cvss >= 9.0:  # 严重漏洞
                     result.append(article)
-                elif cvss >= 7.0 and score >= 60:  # 高危且评分高
+                elif cvss >= 7.0:  # 高危漏洞
                     result.append(article)
                 continue
             
-            # 其他文章按分数过滤
-            if score >= self.min_quality_score or has_content:
+            # arXiv 论文：有摘要就保留
+            if source_type == 'arxiv':
+                if has_summary or has_content:
+                    result.append(article)
+                continue
+            
+            # DBLP 顶会论文：始终保留
+            if source_type == 'dblp':
+                result.append(article)
+                continue
+            
+            # HuggingFace/PWC：有内容就保留
+            if source_type in ('huggingface', 'pwc'):
+                if has_summary or has_content:
+                    result.append(article)
+                continue
+            
+            # Blog：始终保留
+            if source_type == 'blog':
+                result.append(article)
+                continue
+            
+            # RSS 和其他：有摘要或评分达标
+            if has_summary or score >= self.min_quality_score:
                 result.append(article)
         
         return result

@@ -308,6 +308,63 @@ class TieredPusher:
         logger.info(f"Tiered push completed: {total} articles, success={all_success}")
         return all_success
 
+    def push_articles(self, articles: list[dict[str, Any]]) -> bool:
+        """
+        便捷方法：直接推送文章列表
+        
+        Args:
+            articles: 文章列表（字典格式）
+        
+        Returns:
+            是否推送成功
+        """
+        if not articles:
+            logger.info("No articles to push")
+            return True
+        
+        # 创建简单的评分对象
+        class SimpleScoredArticle:
+            def __init__(self, article: dict, score: int):
+                self.article = article
+                self.score = score
+        
+        # 按来源类型排序，优先级：kev > nvd > dblp > arxiv > huggingface > pwc > blog > rss
+        source_priority = {
+            'kev': 0,
+            'nvd': 1,
+            'dblp': 2,
+            'arxiv': 3,
+            'huggingface': 4,
+            'pwc': 5,
+            'blog': 6,
+            'rss': 7,
+        }
+        
+        def get_priority(article: dict) -> int:
+            source_type = article.get('source_type', 'rss')
+            return source_priority.get(source_type, 99)
+        
+        # 排序：先按来源优先级，再按是否有摘要
+        sorted_articles = sorted(
+            articles,
+            key=lambda a: (
+                get_priority(a),
+                0 if (a.get('zh_summary') or a.get('summary')) else 1
+            )
+        )
+        
+        # 创建评分对象
+        scored = [
+            SimpleScoredArticle(a, 100 - i)  # 排名越前分数越高
+            for i, a in enumerate(sorted_articles)
+        ]
+        
+        # 分级
+        tiered = self.categorize_articles(scored)
+        
+        # 推送
+        return self.push_tiered(tiered)
+
 
 # 独立函数用于属性测试
 def categorize_by_position(

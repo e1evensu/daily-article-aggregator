@@ -621,18 +621,32 @@ class Scheduler:
                         
                         logger.info(f"Processing article: {title[:50]}...")
                         
-                        # 步骤4: 处理内容（对于RSS文章获取完整内容）
-                        # arXiv论文已经有摘要作为content，不需要额外获取
+                        # 步骤4: 处理内容
+                        # 对于 RSS 文章获取完整内容
+                        # 对于其他类型，使用已有的描述信息作为 content
                         if source_type == 'rss' and content_processor:
                             content = content_processor.process_article(url)
                             if content:
                                 article['content'] = content
                             else:
                                 logger.warning(f"Failed to fetch content for: {url}")
-                                # 使用空内容继续处理
                                 article['content'] = ''
+                        elif not article.get('content'):
+                            # 对于 KEV/NVD 等数据源，使用描述信息作为 content
+                            content_parts = []
+                            if article.get('short_description'):
+                                content_parts.append(article['short_description'])
+                            if article.get('description'):
+                                content_parts.append(article['description'])
+                            if article.get('required_action'):
+                                content_parts.append(f"Required Action: {article['required_action']}")
+                            if article.get('summary'):
+                                content_parts.append(article['summary'])
+                            
+                            if content_parts:
+                                article['content'] = '\n\n'.join(content_parts)
                         
-                        # 步骤5: AI分析
+                        # 步骤5: AI分析（对所有有内容的文章）
                         if ai_analyzer and article.get('content'):
                             analysis_result = ai_analyzer.analyze_article(
                                 title, 

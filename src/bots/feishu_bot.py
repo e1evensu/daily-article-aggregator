@@ -359,7 +359,7 @@ class FeishuBot:
     
     def _build_rich_text_content_simple(self, articles: list[dict]) -> list:
         """
-        构建简化版富文本消息内容（不含摘要，减少消息长度）
+        构建简化版富文本消息内容（包含简短摘要）
         
         Args:
             articles: 文章列表
@@ -387,18 +387,36 @@ class FeishuBot:
             ]
             content.append(title_line)
             
-            # 分类行（简短信息）
+            # 摘要行（优先 zh_summary，其次 summary，最后 short_description）
+            zh_summary = article.get('zh_summary', '').strip()
+            summary = article.get('summary', '').strip()
+            short_desc = article.get('short_description', '').strip()
+            
+            display_summary = zh_summary or summary or short_desc
+            if display_summary:
+                # 截断过长的摘要
+                if len(display_summary) > 150:
+                    display_summary = display_summary[:147] + "..."
+                summary_line = [{"tag": "text", "text": f"   📝 {display_summary}"}]
+                content.append(summary_line)
+            
+            # 分类和来源信息（简短）
             category = article.get('category', '').strip()
             source = article.get('source', '').strip()
-            if category or source:
-                info_parts = []
-                if category:
-                    info_parts.append(f"[{category}]")
-                if source:
-                    # 截断过长的来源名
-                    if len(source) > 30:
-                        source = source[:27] + "..."
-                    info_parts.append(source)
+            source_type = article.get('source_type', '').strip()
+            
+            info_parts = []
+            if category:
+                info_parts.append(f"[{category}]")
+            if source_type:
+                info_parts.append(source_type.upper())
+            elif source:
+                # 截断过长的来源名
+                if len(source) > 30:
+                    source = source[:27] + "..."
+                info_parts.append(source)
+            
+            if info_parts:
                 info_line = [{"tag": "text", "text": f"   {' '.join(info_parts)}"}]
                 content.append(info_line)
         

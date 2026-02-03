@@ -39,9 +39,8 @@ from src.qa.query_processor import QueryProcessor
 from src.qa.rate_limiter import RateLimiter
 from src.qa.config import (
     EventServerConfig,
-    KnowledgeBaseConfig,
-    ContextManagerConfig,
-    RateLimiterConfig,
+    QAConfig,
+    RateLimitConfig,
     QAEngineConfig
 )
 from src.bots.feishu_bot import FeishuAppBot
@@ -68,15 +67,23 @@ def create_qa_components(config: dict) -> dict:
     
     # 创建知识库
     logger.info("初始化知识库...")
-    kb_config = KnowledgeBaseConfig.from_dict(qa_config.get("knowledge_base", {}))
+    kb_config = {
+        "chroma_path": qa_config.get("chroma", {}).get("path", "data/chroma_db"),
+        "collection_name": qa_config.get("chroma", {}).get("collection_name", "knowledge_articles"),
+        "chunk_size": qa_config.get("chunking", {}).get("chunk_size", 500),
+        "chunk_overlap": qa_config.get("chunking", {}).get("chunk_overlap", 50),
+    }
     knowledge_base = KnowledgeBase(kb_config)
     kb_stats = knowledge_base.get_stats()
     logger.info(f"知识库已加载: {kb_stats['total_documents']} 个文档")
     
     # 创建上下文管理器
     logger.info("初始化上下文管理器...")
-    ctx_config = ContextManagerConfig.from_dict(qa_config.get("context_manager", {}))
-    context_manager = ContextManager(ctx_config)
+    ctx_config = qa_config.get("context_manager", {})
+    context_manager = ContextManager(
+        max_history=ctx_config.get("max_history", 5),
+        ttl_minutes=ctx_config.get("ttl_minutes", 30)
+    )
     
     # 创建查询处理器
     logger.info("初始化查询处理器...")
@@ -84,7 +91,7 @@ def create_qa_components(config: dict) -> dict:
     
     # 创建频率限制器
     logger.info("初始化频率限制器...")
-    rl_config = RateLimiterConfig.from_dict(qa_config.get("rate_limiter", {}))
+    rl_config = RateLimitConfig.from_dict(qa_config.get("rate_limit", {}))
     rate_limiter = RateLimiter(rl_config)
     
     # 创建 QA 引擎

@@ -110,29 +110,25 @@ class TieredPusher:
         keywords = article.get('keywords', [])
         keywords_str = ', '.join(keywords) if isinstance(keywords, list) else str(keywords) if keywords else ''
         
-        # 截断过长的标题
-        if len(title) > 100:
-            title = title[:97] + "..."
-        
         lines = [f"📌 {title}"]
         if url:
-            lines.append(f"   🔗 {url}")
+            lines.append(f"🔗 {url}")
         
         # 来源信息
         source_info = source_type.upper() if source_type else source
         if source_info:
-            lines.append(f"   📰 来源: {source_info}")
+            lines.append(f"📰 来源: {source_info}")
         
         # 摘要（截断过长的摘要）
         if summary:
-            if len(summary) > 300:
-                summary = summary[:297] + "..."
-            lines.append(f"   📝 摘要: {summary}")
+            if len(summary) > 500:
+                summary = summary[:497] + "..."
+            lines.append(f"📝 {summary}")
         
         if category:
-            lines.append(f"   📂 分类: {category}")
+            lines.append(f"📂 分类: {category}")
         if keywords_str:
-            lines.append(f"   🏷️ 关键词: {keywords_str}")
+            lines.append(f"🏷️ 关键词: {keywords_str}")
         
         return '\n'.join(lines)
     
@@ -151,13 +147,10 @@ class TieredPusher:
         )
         
         # 截断摘要为简短版本
-        brief_summary = full_summary[:80] + '...' if len(full_summary) > 80 else full_summary
+        brief_summary = full_summary[:120] + '...' if len(full_summary) > 120 else full_summary
         
-        # 截断过长的标题
-        if len(title) > 80:
-            title = title[:77] + "..."
-        
-        lines = [f"• [{source_type.upper()}] {title}" if source_type else f"• {title}"]
+        prefix = f"[{source_type.upper()}] " if source_type else ""
+        lines = [f"• {prefix}{title}"]
         if url:
             lines.append(f"  {url}")
         if brief_summary:
@@ -171,12 +164,8 @@ class TieredPusher:
         url = article.get('url', '')
         source_type = article.get('source_type', '')
         
-        # 截断过长的标题
-        if len(title) > 60:
-            title = title[:57] + "..."
-        
         prefix = f"[{source_type.upper()}] " if source_type else ""
-        return f"- {prefix}{title}: {url}" if url else f"- {prefix}{title}"
+        return f"- {prefix}{title}\n  {url}" if url else f"- {prefix}{title}"
 
 
     def _build_statistics_header(
@@ -233,7 +222,7 @@ class TieredPusher:
         self, 
         tiered_articles: dict[PushLevel, list[TieredArticle]]
     ) -> bool:
-        """分级推送到飞书（分批发送避免消息过长）"""
+        """分级推送到飞书（单条富文本消息）"""
         if not self.feishu_bot:
             logger.warning("No feishu_bot configured, skipping push")
             return False
@@ -244,69 +233,119 @@ class TieredPusher:
             logger.info("No articles to push")
             return True
         
-        import time
-        all_success = True
+        # 构建富文本内容
+        content = self._build_rich_text_content(tiered_articles)
         
-        # 先发送统计头部
+        # 构建标题
         header = self._build_statistics_header(tiered_articles)
-        logger.info(f"Sending header: {header}")
-        if not self.feishu_bot.send_text(header):
-            logger.warning("Failed to send statistics header")
         
-        time.sleep(0.5)
+        # 发送单条富文本消息
+        logger.info(f"Sending tiered push: {total} articles in one message")
+        success = self.feishu_bot.send_rich_text(header, content)
         
-        # Level 1 - 重点推荐（每篇单独发送，包含详细信息）
+        if success:
+            logger.info(f"Tiered push completed: {total} articles")
+        else:
+            logger.error("Tiered push failed")
+        
+        return success
+    
+    def _build_rich_text_content(
+        self, 
+        tiered_articles: dict[PushLevel, list[TieredArticle]]
+    ) -> list:
+        """构建富文本消息内容"""
+        content = []
+        
+        # Level 1 - 重点推荐
         level1_articles = tiered_articles.get(PushLevel.LEVEL_1, [])
         if level1_articles:
-            logger.info(f"Pushing {len(level1_articles)} Level 1 articles (detailed with summary)")
+            content.append([{"tag": "text", "text": "🔥 【重点推荐】"}])
+            content.append([{"tag": "text", "text": ""}])
             
-            # 发送标题
-            self.feishu_bot.send_text("🔥 【重点推荐】")
-            time.sleep(0.3)
-            
-            for i, tiered in enumerate(level1_articles, 1):
-                msg = self._format_level1_article(tiered)
-                logger.debug(f"Level 1 article {i}: {msg[:100]}...")
-                if not self.feishu_bot.send_text(msg):
-                    all_success = False
-                time.sleep(0.5)
+            for tiered in level1_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source_type = article.get('source_type', '')
+                summary = (
+                    article.get('zh_summary', '') or 
+                    article.get('summary', '') or 
+                    article.get('short_description', '')
+                )
+                category = article.get('category', '')
+                
+                # 标题行（带链接）
+                content.append([
+                    {"tag": "text", "text": "📌 "},
+                    {"tag": "a", "text": title, "href": url} if url else {"tag": "text", "text": title}
+                ])
+                
+                # 来源
+                if source_type:
+                    content.append([{"tag": "text", "text": f"📰 来源: {source_type.upper()}"}])
+                
+                # 摘要
+                if summary:
+                    if len(summary) > 400:
+                        summary = summary[:397] + "..."
+                    content.append([{"tag": "text", "text": f"📝 {summary}"}])
+                
+                # 分类
+                if category:
+                    content.append([{"tag": "text", "text": f"📂 分类: {category}"}])
+                
+                content.append([{"tag": "text", "text": ""}])
         
-        # Level 2 - 值得关注（分批发送，每批5篇）
+        # Level 2 - 值得关注
         level2_articles = tiered_articles.get(PushLevel.LEVEL_2, [])
         if level2_articles:
-            logger.info(f"Pushing {len(level2_articles)} Level 2 articles (brief with short summary)")
+            content.append([{"tag": "text", "text": "⭐ 【值得关注】"}])
+            content.append([{"tag": "text", "text": ""}])
             
-            self.feishu_bot.send_text("⭐ 【值得关注】")
-            time.sleep(0.3)
+            for tiered in level2_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source_type = article.get('source_type', '')
+                summary = (
+                    article.get('zh_summary', '') or 
+                    article.get('summary', '') or 
+                    article.get('short_description', '')
+                )
+                
+                # 标题行
+                prefix = f"[{source_type.upper()}] " if source_type else ""
+                content.append([
+                    {"tag": "text", "text": f"• {prefix}"},
+                    {"tag": "a", "text": title, "href": url} if url else {"tag": "text", "text": title}
+                ])
+                
+                # 简短摘要
+                if summary:
+                    brief = summary[:100] + "..." if len(summary) > 100 else summary
+                    content.append([{"tag": "text", "text": f"  {brief}"}])
             
-            batch_size = 5
-            for i in range(0, len(level2_articles), batch_size):
-                batch = level2_articles[i:i + batch_size]
-                lines = [self._format_level2_article(t) for t in batch]
-                msg = '\n\n'.join(lines)
-                if not self.feishu_bot.send_text(msg):
-                    all_success = False
-                time.sleep(0.5)
+            content.append([{"tag": "text", "text": ""}])
         
-        # Level 3 - 其他文章（分批发送，每批10篇，只发链接）
+        # Level 3 - 其他文章
         level3_articles = tiered_articles.get(PushLevel.LEVEL_3, [])
         if level3_articles:
-            logger.info(f"Pushing {len(level3_articles)} Level 3 articles (links only)")
+            content.append([{"tag": "text", "text": "📋 【其他文章】"}])
             
-            self.feishu_bot.send_text("📋 【其他文章】")
-            time.sleep(0.3)
-            
-            batch_size = 10
-            for i in range(0, len(level3_articles), batch_size):
-                batch = level3_articles[i:i + batch_size]
-                lines = [self._format_level3_article(t) for t in batch]
-                msg = '\n'.join(lines)
-                if not self.feishu_bot.send_text(msg):
-                    all_success = False
-                time.sleep(0.5)
+            for tiered in level3_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source_type = article.get('source_type', '')
+                
+                prefix = f"[{source_type.upper()}] " if source_type else ""
+                content.append([
+                    {"tag": "text", "text": f"- {prefix}"},
+                    {"tag": "a", "text": title, "href": url} if url else {"tag": "text", "text": title}
+                ])
         
-        logger.info(f"Tiered push completed: {total} articles, success={all_success}")
-        return all_success
+        return content
 
     def push_articles(self, articles: list[dict[str, Any]]) -> bool:
         """

@@ -758,6 +758,15 @@ class Scheduler:
                                 logger.info(f"Synced {sync_count} articles to Feishu Bitable")
                             except Exception as e:
                                 logger.error(f"Failed to sync to Bitable: {e}")
+                        
+                        # 步骤10: 话题聚合与飞书文档发布
+                        topic_config = self.config.get('topic_aggregation', {})
+                        if topic_config.get('enabled', False):
+                            logger.info("Step 10: Running topic aggregation...")
+                            try:
+                                self._run_topic_aggregation(articles_to_push, components)
+                            except Exception as e:
+                                logger.error(f"Topic aggregation failed: {e}")
                     else:
                         logger.error("Failed to push articles to Feishu")
                         # 推送失败，抛出异常以保留检查点
@@ -789,6 +798,106 @@ class Scheduler:
             # 清理资源
             if components:
                 self._cleanup_components(components)
+    
+    def _run_topic_aggregation(
+        self, 
+        articles: list[dict], 
+        components: dict
+    ):
+        """
+        运行话题聚合并发布到飞书文档
+        
+        Args:
+            articles: 文章列表
+            components: 组件字典
+        """
+        from src.aggregation.topic_aggregation_system import TopicAggregationSystem
+        from src.models import Article
+        
+        # 获取话题聚合配置
+        topic_config = self.config.get('topic_aggregation', {})
+        ai_config = self.config.get('ai', {})
+        bitable_config = self.config.get('feishu_bitable', {})
+        
+        # 构建话题聚合系统配置
+        system_config = {
+            'quality_filter': {
+                'blacklist_domains': topic_config.get('blacklist_domains', []),
+                'trusted_sources': topic_config.get('trusted_sources', []),
+            },
+            'aggregation_engine': {
+                'similarity_threshold': topic_config.get('similarity_threshold', 0.7),
+                'aggregation_threshold': topic_config.get('aggregation_threshold', 3),
+                'time_window_days': topic_config.get('time_window_days', 7),
+                'title_weight': topic_config.get('title_weight', 0.6),
+                'keyword_weight': topic_config.get('keyword_weight', 0.4),
+                'use_ai_similarity': topic_config.get('use_ai_similarity', False),
+            },
+            'synthesis_generator': {},
+            'doc_publisher': {
+                'app_id': bitable_config.get('app_id', ''),
+                'app_secret': bitable_config.get('app_secret', ''),
+                'folder_token': topic_config.get('folder_token', ''),
+                'backup_dir': 'data/doc_backups',
+            },
+            'rss_generator': {
+                'output_path': 'data/knowledge_feed.xml',
+            },
+            'ai': ai_config,
+        }
+        
+        # 转换文章格式
+        article_objects = []
+        for a in articles:
+            try:
+                article = Article(
+                    title=a.get('title', ''),
+                    url=a.get('url', ''),
+                    source=a.get('source', ''),
+                    source_type=a.get('source_type', ''),
+                    content=a.get('content', ''),
+                    summary=a.get('summary', ''),
+                    zh_summary=a.get('zh_summary', ''),
+                    category=a.get('category', ''),
+                    fetched_at=a.get('fetched_at', ''),
+                )
+                article_objects.append(article)
+            except Exception as e:
+                logger.warning(f"Failed to convert article: {e}")
+        
+        if not article_objects:
+            logger.warning("No valid articles for topic aggregation")
+            return
+        
+        # 运行话题聚合
+        try:
+            system = TopicAggregationSystem(system_config)
+            result = system.run(
+                article_objects,
+                publish_to_feishu=True,
+                generate_rss=True
+            )
+            
+            stats = result.get('stats', {})
+            logger.info(
+                f"Topic aggregation completed: "
+                f"clusters={stats.get('clusters_count', 0)}, "
+                f"syntheses={stats.get('syntheses_count', 0)}, "
+                f"published={stats.get('published_count', 0)}"
+            )
+            
+            # 如果有综述发布成功，发送通知
+            if stats.get('published_count', 0) > 0:
+                publish_results = result.get('publish_results', [])
+                for pr in publish_results:
+                    if pr.success and pr.document_url:
+                        # 发送飞书通知
+                        if 'feishu_bot' in components:
+                            msg = f"📄 话题综述已发布: {pr.document_url}"
+                            components['feishu_bot'].send_text(msg)
+                            
+        except Exception as e:
+            logger.error(f"Topic aggregation error: {e}", exc_info=True)
     
     def start(self):
         """

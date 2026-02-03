@@ -35,6 +35,8 @@ class HuggingFaceFetcher(BaseFetcher):
     """
     
     RSS_URL = "https://huggingface.co/papers/rss"
+    # 备用：使用 Daily Papers 页面的 API
+    API_URL = "https://huggingface.co/api/daily_papers"
     
     def __init__(self, config: dict[str, Any]):
         """
@@ -72,7 +74,7 @@ class HuggingFaceFetcher(BaseFetcher):
         Fetch trending papers
         
         从 HuggingFace RSS 获取每日 trending AI 论文。
-        Fetches daily trending AI papers from HuggingFace RSS.
+        如果 RSS 失败，尝试使用 API。
         
         Returns:
             FetchResult: 包含获取的论文列表和可能的错误信息
@@ -85,42 +87,94 @@ class HuggingFaceFetcher(BaseFetcher):
                 error='Fetcher is disabled'
             )
         
+        # 先尝试 RSS
+        items = self._fetch_from_rss()
+        
+        # 如果 RSS 失败，尝试 API
+        if not items:
+            items = self._fetch_from_api()
+        
+        logger.info(f"HuggingFace Fetcher: 获取了 {len(items)} 篇论文")
+        
+        return FetchResult(
+            items=items,
+            source_name='HuggingFace Papers',
+            source_type='huggingface'
+        )
+    
+    def _fetch_from_rss(self) -> list[dict[str, Any]]:
+        """从 RSS 获取论文"""
         try:
-            logger.info("Fetching trending papers from HuggingFace...")
-            
-            # 使用 feedparser 获取 RSS
-            # Fetch RSS using feedparser
+            logger.info("Fetching trending papers from HuggingFace RSS...")
             feed = feedparser.parse(self.RSS_URL)
             
-            # 检查是否有错误
-            # Check for errors
             if feed.bozo and feed.bozo_exception:
                 logger.warning(f"HuggingFace RSS 解析警告: {feed.bozo_exception}")
             
             items: list[dict[str, Any]] = []
-            
             for entry in feed.entries:
                 item = self._parse_entry(entry)
                 if item:
                     items.append(item)
             
-            logger.info(f"HuggingFace Fetcher: 获取了 {len(items)} 篇论文")
-            
-            return FetchResult(
-                items=items,
-                source_name='HuggingFace Papers',
-                source_type='huggingface'
-            )
-            
+            return items
         except Exception as e:
-            error_msg = f"HuggingFace Fetcher error: {str(e)}"
-            logger.error(error_msg)
-            return FetchResult(
-                items=[],
-                source_name='HuggingFace Papers',
-                source_type='huggingface',
-                error=error_msg
-            )
+            logger.warning(f"HuggingFace RSS 获取失败: {e}")
+            return []
+    
+    def _fetch_from_api(self) -> list[dict[str, Any]]:
+        """从 API 获取论文"""
+        try:
+            import requests
+            logger.info("Fetching trending papers from HuggingFace API...")
+            
+            response = requests.get(self.API_URL, timeout=self.timeout)
+            response.raise_for_status()
+            
+            data = response.json()
+            items: list[dict[str, Any]] = []
+            
+            for paper in data:
+                parsed = self._parse_api_paper(paper)
+                if parsed:
+                    items.append(parsed)
+            
+            return items
+        except Exception as e:
+            logger.error(f"HuggingFace API 获取失败: {e}")
+            return []
+    
+    def _parse_api_paper(self, paper: dict) -> dict[str, Any] | None:
+        """解析 API 返回的论文"""
+        paper_data = paper.get('paper', {})
+        
+        title = paper_data.get('title', '').strip()
+        if not title:
+            return None
+        
+        paper_id = paper_data.get('id', '')
+        url = f"https://huggingface.co/papers/{paper_id}" if paper_id else ''
+        if not url:
+            return None
+        
+        summary = paper_data.get('summary', '').strip()
+        published_date = paper_data.get('publishedAt', '')[:10] if paper_data.get('publishedAt') else ''
+        
+        authors = []
+        for author in paper_data.get('authors', []):
+            name = author.get('name', '').strip()
+            if name:
+                authors.append(name)
+        
+        return {
+            'title': title,
+            'url': url,
+            'summary': summary,
+            'authors': authors,
+            'published_date': published_date,
+            'source': 'HuggingFace Papers',
+            'source_type': 'huggingface',
+        }
     
     def _parse_entry(self, entry: Any) -> dict[str, Any] | None:
         """

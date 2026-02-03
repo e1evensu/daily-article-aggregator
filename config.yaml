@@ -100,7 +100,7 @@ data_sources:
     timeout: 30
   
   nvd:
-    enabled: true
+    enabled: false  # 禁用 NVD，每天数百个低质量 CVE
     api_key: "${NVD_API_KEY:}"  # 可选，有 key 速率更高
     days_back: 7
     timeout: 60

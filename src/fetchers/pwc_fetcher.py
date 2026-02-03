@@ -37,6 +37,9 @@ class PWCFetcher(BaseFetcher):
     
     API_BASE = "https://paperswithcode.com/api/v1"
     
+    # 备用：直接抓取 trending 页面
+    TRENDING_URL = "https://paperswithcode.com/latest"
+    
     def __init__(self, config: dict[str, Any]):
         """
         初始化 PWC Fetcher
@@ -89,20 +92,41 @@ class PWCFetcher(BaseFetcher):
                 error='Fetcher is disabled'
             )
         
+        # 先尝试 API
+        items = self._fetch_from_api()
+        
+        if not items:
+            logger.warning("PWC API 失败，跳过")
+        
+        logger.info(f"PWC Fetcher: 获取了 {len(items)} 篇论文")
+        
+        return FetchResult(
+            items=items,
+            source_name='Papers With Code',
+            source_type='pwc'
+        )
+    
+    def _fetch_from_api(self) -> list[dict[str, Any]]:
+        """从 API 获取论文"""
         try:
             logger.info(f"Fetching papers from Papers With Code (limit={self.limit})...")
             
             # 获取最新论文
-            # Fetch latest papers
             papers_url = f"{self.API_BASE}/papers/"
             params = {
-                'items_per_page': self.limit,
-                'ordering': '-published',  # 按发布日期降序
+                'items_per_page': min(self.limit, 50),  # API 限制每页最多 50
+                'page': 1,
+            }
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (compatible; DailyArticleAggregator/1.0)',
+                'Accept': 'application/json',
             }
             
             response = requests.get(
                 papers_url,
                 params=params,
+                headers=headers,
                 timeout=self.timeout
             )
             response.raise_for_status()
@@ -117,41 +141,17 @@ class PWCFetcher(BaseFetcher):
                 if parsed:
                     items.append(parsed)
             
-            logger.info(f"PWC Fetcher: 获取了 {len(items)} 篇论文")
-            
-            return FetchResult(
-                items=items,
-                source_name='Papers With Code',
-                source_type='pwc'
-            )
+            return items
             
         except requests.exceptions.Timeout:
-            error_msg = f"PWC API request timeout after {self.timeout}s"
-            logger.error(error_msg)
-            return FetchResult(
-                items=[],
-                source_name='Papers With Code',
-                source_type='pwc',
-                error=error_msg
-            )
+            logger.error(f"PWC API request timeout after {self.timeout}s")
+            return []
         except requests.exceptions.RequestException as e:
-            error_msg = f"PWC API request failed: {str(e)}"
-            logger.error(error_msg)
-            return FetchResult(
-                items=[],
-                source_name='Papers With Code',
-                source_type='pwc',
-                error=error_msg
-            )
+            logger.error(f"PWC API request failed: {str(e)}")
+            return []
         except Exception as e:
-            error_msg = f"PWC Fetcher error: {str(e)}"
-            logger.error(error_msg)
-            return FetchResult(
-                items=[],
-                source_name='Papers With Code',
-                source_type='pwc',
-                error=error_msg
-            )
+            logger.error(f"PWC Fetcher error: {str(e)}")
+            return []
     
     def _parse_paper(self, paper: dict) -> dict[str, Any] | None:
         """

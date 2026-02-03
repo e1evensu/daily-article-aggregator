@@ -43,30 +43,37 @@ class DBLPFetcher(BaseFetcher):
         max_workers: 并发获取的最大线程数
     """
     
-    # 预定义的会议 RSS 源
-    # Predefined conference RSS feeds
+    # 预定义的会议 RSS 源（使用 DBLP 搜索 API）
+    # Predefined conference feeds (using DBLP search API)
     CONFERENCE_FEEDS: dict[str, dict[str, str]] = {
         'sp': {
-            'url': 'https://dblp.org/db/conf/sp/sp.xml',
+            'venue': 'IEEE S&P',
+            'query': 'venue:sp:',
             'name': 'IEEE S&P',
             'full_name': 'IEEE Symposium on Security and Privacy'
         },
         'ccs': {
-            'url': 'https://dblp.org/db/conf/ccs/ccs.xml',
+            'venue': 'ACM CCS',
+            'query': 'venue:ccs:',
             'name': 'ACM CCS',
             'full_name': 'ACM Conference on Computer and Communications Security'
         },
         'uss': {
-            'url': 'https://dblp.org/db/conf/uss/uss.xml',
+            'venue': 'USENIX Security',
+            'query': 'venue:usenix_security:',
             'name': 'USENIX Security',
             'full_name': 'USENIX Security Symposium'
         },
         'ndss': {
-            'url': 'https://dblp.org/db/conf/ndss/ndss.xml',
+            'venue': 'NDSS',
+            'query': 'venue:ndss:',
             'name': 'NDSS',
             'full_name': 'Network and Distributed System Security Symposium'
         }
     }
+    
+    # DBLP 搜索 API
+    API_BASE = "https://dblp.org/search/publ/api"
     
     def __init__(self, config: dict[str, Any]):
         """
@@ -183,8 +190,8 @@ class DBLPFetcher(BaseFetcher):
         conference: str
     ) -> tuple[list[dict[str, Any]], str | None]:
         """
-        获取单个会议的论文
-        Fetch papers from a single conference
+        获取单个会议的论文（使用 DBLP 搜索 API）
+        Fetch papers from a single conference using DBLP search API
         
         Args:
             conference: 会议标识符 (sp, ccs, uss, ndss)
@@ -192,29 +199,40 @@ class DBLPFetcher(BaseFetcher):
         Returns:
             (论文列表, 错误信息) 元组
         """
+        import requests
+        
         conf_info = self.CONFERENCE_FEEDS.get(conference)
         if not conf_info:
             return [], f"Unknown conference: {conference}"
         
-        url = conf_info['url']
+        query = conf_info['query']
         conf_name = conf_info['name']
         
         try:
             logger.info(f"Fetching papers from {conf_name}...")
             
-            # 使用 feedparser 获取 RSS
-            # Fetch RSS using feedparser
-            feed = feedparser.parse(url)
+            # 使用 DBLP 搜索 API
+            params = {
+                'q': query,
+                'format': 'json',
+                'h': 100,  # 最多返回 100 条
+            }
             
-            # 检查是否有错误
-            # Check for errors
-            if feed.bozo and feed.bozo_exception:
-                logger.warning(f"DBLP {conf_name} 解析警告: {feed.bozo_exception}")
+            response = requests.get(
+                self.API_BASE,
+                params=params,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            
+            data = response.json()
             
             items: list[dict[str, Any]] = []
+            hits = data.get('result', {}).get('hits', {}).get('hit', [])
             
-            for entry in feed.entries:
-                item = self._parse_dblp_entry(entry, conference, conf_name)
+            for hit in hits:
+                info = hit.get('info', {})
+                item = self._parse_dblp_api_entry(info, conference, conf_name)
                 if item:
                     items.append(item)
             
@@ -225,6 +243,64 @@ class DBLPFetcher(BaseFetcher):
             error_msg = f"Failed to fetch {conf_name}: {str(e)}"
             logger.error(error_msg)
             return [], error_msg
+    
+    def _parse_dblp_api_entry(
+        self, 
+        info: dict, 
+        conference: str,
+        conf_name: str
+    ) -> dict[str, Any] | None:
+        """
+        解析 DBLP API 返回的条目
+        Parse DBLP API entry
+        """
+        title = info.get('title', '').strip()
+        if not title:
+            return None
+        
+        # 移除标题末尾的句号
+        if title.endswith('.'):
+            title = title[:-1]
+        
+        url = info.get('url', '').strip()
+        if not url:
+            return None
+        
+        # 提取作者
+        authors = []
+        authors_data = info.get('authors', {}).get('author', [])
+        if isinstance(authors_data, dict):
+            authors_data = [authors_data]
+        for author in authors_data:
+            if isinstance(author, dict):
+                name = author.get('text', '').strip()
+            else:
+                name = str(author).strip()
+            if name:
+                authors.append(name)
+        
+        # 提取年份
+        year = info.get('year')
+        if year:
+            try:
+                year = int(year)
+            except (ValueError, TypeError):
+                year = None
+        
+        # 提取发布日期
+        published_date = f"{year}-01-01" if year else ""
+        
+        return {
+            'title': title,
+            'authors': authors,
+            'conference': conf_name,
+            'conference_id': conference,
+            'year': year,
+            'url': url,
+            'source': conf_name,
+            'source_type': 'dblp',
+            'published_date': published_date,
+        }
     
     def _parse_dblp_entry(
         self, 

@@ -42,7 +42,7 @@ class BlogFetcher(BaseFetcher):
     # Predefined blog RSS feeds
     BLOG_FEEDS: dict[str, dict[str, str]] = {
         'openai': {
-            'url': 'https://openai.com/blog/rss/',
+            'url': 'https://openai.com/news/rss',
             'name': 'OpenAI Blog',
             'company': 'OpenAI'
         },
@@ -52,9 +52,19 @@ class BlogFetcher(BaseFetcher):
             'company': 'DeepMind'
         },
         'anthropic': {
-            'url': 'https://www.anthropic.com/rss.xml',
+            'url': 'https://www.anthropic.com/feed',
             'name': 'Anthropic Blog',
             'company': 'Anthropic'
+        },
+        'google_ai': {
+            'url': 'https://blog.google/technology/ai/rss/',
+            'name': 'Google AI Blog',
+            'company': 'Google'
+        },
+        'meta_ai': {
+            'url': 'https://ai.meta.com/blog/rss/',
+            'name': 'Meta AI Blog',
+            'company': 'Meta'
         }
     }
     

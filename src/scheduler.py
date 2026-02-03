@@ -286,6 +286,29 @@ class Scheduler:
             except Exception as e:
                 logger.warning(f"Error closing repository: {e}")
     
+    def _get_existing_urls(self, repository: ArticleRepository) -> set[str]:
+        """
+        获取数据库中已存在的所有文章 URL
+        Get all existing article URLs from database
+        
+        用于在抓取阶段快速过滤已存在的文章，避免重复处理。
+        
+        Args:
+            repository: 文章仓库实例
+        
+        Returns:
+            已存在的 URL 集合
+        """
+        try:
+            conn = repository._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT url FROM articles")
+            rows = cursor.fetchall()
+            return {row['url'] for row in rows}
+        except Exception as e:
+            logger.warning(f"获取已存在 URL 失败: {e}")
+            return set()
+    
     def run_task(self):
         """
         执行完整的爬取-分析-推送任务
@@ -336,6 +359,10 @@ class Scheduler:
             
             all_articles = []
             
+            # 预先获取数据库中已存在的 URL 集合（用于所有数据源的快速去重）
+            existing_urls = self._get_existing_urls(repository)
+            logger.info(f"数据库中已有 {len(existing_urls)} 篇文章")
+            
             # 步骤1: 从arXiv获取论文
             if 'arxiv_fetcher' in components:
                 logger.info("Step 1: Fetching papers from arXiv...")
@@ -347,8 +374,10 @@ class Scheduler:
                     if arxiv_fetcher.keywords:
                         papers = arxiv_fetcher.filter_by_keywords(papers)
                     
-                    logger.info(f"Fetched {len(papers)} papers from arXiv")
-                    all_articles.extend(papers)
+                    # 过滤已存在的文章
+                    new_papers = [p for p in papers if p.get('url', '') not in existing_urls]
+                    logger.info(f"arXiv: 新增 {len(new_papers)} 篇，跳过 {len(papers) - len(new_papers)} 篇已存在")
+                    all_articles.extend(new_papers)
                 except Exception as e:
                     logger.error(f"Error fetching arXiv papers: {e}")
             
@@ -367,11 +396,15 @@ class Scheduler:
                             fetch_checkpoint = checkpoint_manager.start_fetch(all_urls)
                             pending_urls = checkpoint_manager.get_pending_feeds(all_urls)
                             
-                            # 先加载已抓取的文章
+                            # 先加载已抓取的文章（过滤掉已存在的）
                             existing_articles = checkpoint_manager.get_all_fetched_articles()
                             if existing_articles:
-                                all_articles.extend(existing_articles)
-                                logger.info(f"从检查点恢复 {len(existing_articles)} 篇已抓取文章")
+                                new_from_checkpoint = [
+                                    a for a in existing_articles 
+                                    if a.get('url', '') not in existing_urls
+                                ]
+                                all_articles.extend(new_from_checkpoint)
+                                logger.info(f"从检查点恢复 {len(new_from_checkpoint)} 篇新文章（跳过 {len(existing_articles) - len(new_from_checkpoint)} 篇已存在）")
                             
                             if pending_urls:
                                 logger.info(f"待抓取订阅源: {len(pending_urls)}/{len(all_urls)}")
@@ -390,9 +423,18 @@ class Scheduler:
                                     on_feed_error=on_feed_error
                                 )
                                 
-                                # 合并新抓取的文章
+                                # 合并新抓取的文章（过滤掉已存在的）
+                                new_count = 0
+                                skip_count = 0
                                 for feed_name, articles in feeds_result.items():
-                                    all_articles.extend(articles)
+                                    for article in articles:
+                                        if article.get('url', '') not in existing_urls:
+                                            all_articles.append(article)
+                                            new_count += 1
+                                        else:
+                                            skip_count += 1
+                                
+                                logger.info(f"RSS 抓取: 新增 {new_count} 篇，跳过 {skip_count} 篇已存在")
                                 
                                 # 保存最终检查点
                                 checkpoint_manager.save_fetch_checkpoint()
@@ -401,12 +443,21 @@ class Scheduler:
                             
                             checkpoint_manager.complete_fetch()
                         else:
-                            # 不使用断点续传，直接抓取
+                            # 不使用断点续传，直接抓取（但仍然过滤已存在的）
                             feeds_result = rss_fetcher.fetch_all_feeds(all_urls)
+                            new_count = 0
+                            skip_count = 0
                             for feed_name, articles in feeds_result.items():
-                                all_articles.extend(articles)
+                                for article in articles:
+                                    if article.get('url', '') not in existing_urls:
+                                        all_articles.append(article)
+                                        new_count += 1
+                                    else:
+                                        skip_count += 1
+                            
+                            logger.info(f"RSS 抓取: 新增 {new_count} 篇，跳过 {skip_count} 篇已存在")
                         
-                        logger.info(f"RSS抓取完成，共 {len(all_articles)} 篇文章")
+                        logger.info(f"RSS抓取完成，共 {len(all_articles)} 篇新文章")
                     else:
                         logger.warning(f"OPML file not found: {opml_path}")
                 except Exception as e:
@@ -416,6 +467,7 @@ class Scheduler:
                         checkpoint_manager.save_fetch_checkpoint()
             
             # 步骤2.1: 从新数据源获取文章（高级功能）
+            # 注意：existing_urls 已在前面获取
             vulnerability_articles = []  # 漏洞类文章单独处理
             
             # DBLP - 安全四大顶会
@@ -424,8 +476,9 @@ class Scheduler:
                 try:
                     result = components['dblp_fetcher'].fetch()
                     if result.items:
-                        all_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} papers from DBLP")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"DBLP: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching DBLP papers: {e}")
             
@@ -435,8 +488,9 @@ class Scheduler:
                 try:
                     result = components['nvd_fetcher'].fetch()
                     if result.items:
-                        vulnerability_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} CVEs from NVD")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        vulnerability_articles.extend(new_items)
+                        logger.info(f"NVD: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching NVD CVEs: {e}")
             
@@ -446,8 +500,9 @@ class Scheduler:
                 try:
                     result = components['kev_fetcher'].fetch()
                     if result.items:
-                        vulnerability_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} KEV entries from CISA")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        vulnerability_articles.extend(new_items)
+                        logger.info(f"KEV: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching KEV entries: {e}")
             
@@ -457,8 +512,9 @@ class Scheduler:
                 try:
                     result = components['huggingface_fetcher'].fetch()
                     if result.items:
-                        all_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} papers from HuggingFace")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"HuggingFace: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching HuggingFace papers: {e}")
             
@@ -468,8 +524,9 @@ class Scheduler:
                 try:
                     result = components['pwc_fetcher'].fetch()
                     if result.items:
-                        all_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} papers from PWC")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"PWC: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching PWC papers: {e}")
             
@@ -479,8 +536,9 @@ class Scheduler:
                 try:
                     result = components['blog_fetcher'].fetch()
                     if result.items:
-                        all_articles.extend(result.items)
-                        logger.info(f"Fetched {len(result.items)} articles from blogs")
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"Blogs: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching blog articles: {e}")
             
@@ -505,10 +563,10 @@ class Scheduler:
                 # 没有漏洞过滤器，直接添加所有漏洞
                 all_articles.extend(vulnerability_articles)
             
-            logger.info(f"Total articles fetched: {len(all_articles)}")
+            logger.info(f"Total new articles to process: {len(all_articles)}")
             
-            # 步骤3: 检查数据库去重
-            logger.info("Step 3: Checking for duplicates...")
+            # 步骤3: 检查数据库去重（二次确认，主要用于标题相似度去重）
+            logger.info("Step 3: Checking for duplicates (title similarity)...")
             new_articles = []
             for article in all_articles:
                 url = article.get('url', '')

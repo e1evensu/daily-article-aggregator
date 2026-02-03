@@ -292,19 +292,21 @@ class FeishuBot:
         
         return content
     
-    def push_articles(self, articles: list[dict]) -> bool:
+    def push_articles(self, articles: list[dict], batch_size: int = 10) -> bool:
         """
-        推送文章到飞书
+        推送文章到飞书（支持分批推送）
         
         Args:
             articles: 文章列表，每篇文章应包含title和url字段
+            batch_size: 每批推送的文章数量，默认10篇
             
         Returns:
-            是否推送成功
+            是否全部推送成功
             
         Note:
             - 空列表会返回True（无需推送）
-            - 使用富文本格式发送，标题为"📚 今日文章推荐"
+            - 文章数量超过 batch_size 时会分批推送
+            - 每批之间间隔1秒，避免触发频率限制
         """
         if not articles:
             logger.info("没有文章需要推送")
@@ -320,12 +322,87 @@ class FeishuBot:
             logger.warning("所有文章都缺少必要字段（title或url）")
             return False
         
-        # 构建富文本内容
-        title = f"📚 今日文章推荐 ({len(valid_articles)}篇)"
-        content = self._build_rich_text_content(valid_articles)
+        total_count = len(valid_articles)
+        logger.info(f"准备推送 {total_count} 篇文章到飞书（每批 {batch_size} 篇）")
         
-        logger.info(f"推送 {len(valid_articles)} 篇文章到飞书")
-        return self.send_rich_text(title, content)
+        # 分批推送
+        all_success = True
+        batch_num = 0
+        
+        for i in range(0, total_count, batch_size):
+            batch_num += 1
+            batch = valid_articles[i:i + batch_size]
+            batch_start = i + 1
+            batch_end = min(i + batch_size, total_count)
+            
+            # 构建富文本内容
+            title = f"📚 今日文章推荐 ({batch_start}-{batch_end}/{total_count}篇)"
+            content = self._build_rich_text_content_simple(batch)
+            
+            logger.info(f"推送第 {batch_num} 批: {len(batch)} 篇文章")
+            success = self.send_rich_text(title, content)
+            
+            if not success:
+                logger.error(f"第 {batch_num} 批推送失败")
+                all_success = False
+            
+            # 批次之间间隔，避免触发频率限制
+            if i + batch_size < total_count:
+                time.sleep(1)
+        
+        if all_success:
+            logger.info(f"全部 {total_count} 篇文章推送成功")
+        else:
+            logger.warning(f"部分批次推送失败，请检查日志")
+        
+        return all_success
+    
+    def _build_rich_text_content_simple(self, articles: list[dict]) -> list:
+        """
+        构建简化版富文本消息内容（不含摘要，减少消息长度）
+        
+        Args:
+            articles: 文章列表
+            
+        Returns:
+            飞书富文本格式的内容数组
+        """
+        content = []
+        
+        for i, article in enumerate(articles, 1):
+            title = article.get('title', '').strip()
+            url = article.get('url', '').strip()
+            
+            if not title or not url:
+                continue
+            
+            # 截断过长的标题
+            if len(title) > 80:
+                title = title[:77] + "..."
+            
+            # 文章标题行（带链接）
+            title_line = [
+                {"tag": "text", "text": f"{i}. "},
+                {"tag": "a", "text": title, "href": url}
+            ]
+            content.append(title_line)
+            
+            # 分类行（简短信息）
+            category = article.get('category', '').strip()
+            source = article.get('source', '').strip()
+            if category or source:
+                info_parts = []
+                if category:
+                    info_parts.append(f"[{category}]")
+                if source:
+                    # 截断过长的来源名
+                    if len(source) > 30:
+                        source = source[:27] + "..."
+                    info_parts.append(source)
+                info_line = [{"tag": "text", "text": f"   {' '.join(info_parts)}"}]
+                content.append(info_line)
+        
+        return content
 
 
 

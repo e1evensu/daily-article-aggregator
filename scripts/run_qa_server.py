@@ -44,6 +44,7 @@ from src.qa.config import (
     QAEngineConfig
 )
 from src.bots.feishu_bot import FeishuAppBot
+from src.analyzers.ai_analyzer import AIAnalyzer
 
 # 配置日志
 logging.basicConfig(
@@ -94,6 +95,11 @@ def create_qa_components(config: dict) -> dict:
     rl_config = RateLimitConfig.from_dict(qa_config.get("rate_limit", {}))
     rate_limiter = RateLimiter(rl_config)
     
+    # 创建 AI 分析器（复用现有配置）
+    logger.info("初始化 AI 分析器...")
+    ai_config = config.get("ai", {})
+    ai_analyzer = AIAnalyzer(ai_config)
+    
     # 创建 QA 引擎
     logger.info("初始化问答引擎...")
     engine_config = QAEngineConfig.from_dict(qa_config.get("qa_engine", {}))
@@ -101,6 +107,7 @@ def create_qa_components(config: dict) -> dict:
         knowledge_base=knowledge_base,
         context_manager=context_manager,
         query_processor=query_processor,
+        ai_analyzer=ai_analyzer,
         config=engine_config
     )
     

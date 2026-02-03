@@ -197,6 +197,39 @@ def get_config_value(config: dict, key_path: str, default: Any = None) -> Any:
 # 默认配置值
 # Default Configuration Values
 DEFAULT_CONFIG: dict[str, Any] = {
+    # 知识库问答默认配置
+    # Knowledge QA default configuration
+    'knowledge_qa': {
+        'enabled': True,
+        'chroma': {
+            'path': 'data/chroma_db',
+            'collection_name': 'knowledge_articles'
+        },
+        'embedding': {
+            'model': 'text-embedding-3-small'
+        },
+        'event_server': {
+            'host': '0.0.0.0',
+            'port': 8080,
+            'verification_token': '',
+            'encrypt_key': ''
+        },
+        'qa': {
+            'max_context_turns': 5,
+            'context_ttl_minutes': 30,
+            'max_retrieved_docs': 5,
+            'min_relevance_score': 0.5,
+            'answer_max_length': 1000
+        },
+        'chunking': {
+            'chunk_size': 500,
+            'chunk_overlap': 50
+        },
+        'rate_limit': {
+            'requests_per_minute': 20,
+            'requests_per_user_minute': 5
+        }
+    },
     # 新数据源默认配置
     # New data sources default configuration
     'data_sources': {
@@ -434,6 +467,200 @@ def get_priority_scoring_config(config: dict) -> dict:
     user_config = config.get('priority_scoring', {})
     default_config = DEFAULT_CONFIG.get('priority_scoring', {})
     return _deep_merge(default_config, user_config)
+
+
+def get_knowledge_qa_config(config: dict) -> dict:
+    """
+    获取知识库问答配置，自动应用默认值。
+    Get knowledge QA configuration with defaults applied.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        知识库问答配置字典，包含默认值
+        Knowledge QA configuration dict with defaults
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'enabled': False}}
+        >>> result = get_knowledge_qa_config(config)
+        >>> result['enabled']
+        False
+        >>> result['qa']['max_context_turns']  # 使用默认值
+        5
+    """
+    user_config = config.get('knowledge_qa', {})
+    default_config = DEFAULT_CONFIG.get('knowledge_qa', {})
+    return _deep_merge(default_config, user_config)
+
+
+def get_knowledge_qa_chroma_config(config: dict) -> dict:
+    """
+    获取知识库 ChromaDB 配置。
+    Get knowledge QA ChromaDB configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        ChromaDB 配置字典
+        ChromaDB configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'chroma': {'path': 'custom/path'}}}
+        >>> result = get_knowledge_qa_chroma_config(config)
+        >>> result['path']
+        'custom/path'
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('chroma', {})
+
+
+def get_knowledge_qa_embedding_config(config: dict) -> dict:
+    """
+    获取知识库 Embedding 配置。
+    Get knowledge QA embedding configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        Embedding 配置字典
+        Embedding configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'embedding': {'model': 'custom-model'}}}
+        >>> result = get_knowledge_qa_embedding_config(config)
+        >>> result['model']
+        'custom-model'
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('embedding', {})
+
+
+def get_knowledge_qa_event_server_config(config: dict) -> dict:
+    """
+    获取知识库事件服务器配置。
+    Get knowledge QA event server configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        事件服务器配置字典
+        Event server configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'event_server': {'port': 9000}}}
+        >>> result = get_knowledge_qa_event_server_config(config)
+        >>> result['port']
+        9000
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('event_server', {})
+
+
+def get_knowledge_qa_qa_config(config: dict) -> dict:
+    """
+    获取知识库问答参数配置。
+    Get knowledge QA question-answering parameters configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        问答参数配置字典
+        QA parameters configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'qa': {'max_context_turns': 10}}}
+        >>> result = get_knowledge_qa_qa_config(config)
+        >>> result['max_context_turns']
+        10
+        >>> result['context_ttl_minutes']  # 使用默认值
+        30
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('qa', {})
+
+
+def get_knowledge_qa_chunking_config(config: dict) -> dict:
+    """
+    获取知识库分块配置。
+    Get knowledge QA chunking configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        分块配置字典
+        Chunking configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'chunking': {'chunk_size': 1000}}}
+        >>> result = get_knowledge_qa_chunking_config(config)
+        >>> result['chunk_size']
+        1000
+        >>> result['chunk_overlap']  # 使用默认值
+        50
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('chunking', {})
+
+
+def get_knowledge_qa_rate_limit_config(config: dict) -> dict:
+    """
+    获取知识库频率限制配置。
+    Get knowledge QA rate limit configuration.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        频率限制配置字典
+        Rate limit configuration dict
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'rate_limit': {'requests_per_minute': 30}}}
+        >>> result = get_knowledge_qa_rate_limit_config(config)
+        >>> result['requests_per_minute']
+        30
+        >>> result['requests_per_user_minute']  # 使用默认值
+        5
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('rate_limit', {})
+
+
+def is_knowledge_qa_enabled(config: dict) -> bool:
+    """
+    检查知识库问答功能是否启用。
+    Check if knowledge QA feature is enabled.
+    
+    Args:
+        config: 完整配置字典
+                Full configuration dictionary
+    
+    Returns:
+        知识库问答功能是否启用
+        Whether knowledge QA feature is enabled
+    
+    Examples:
+        >>> config = {'knowledge_qa': {'enabled': False}}
+        >>> is_knowledge_qa_enabled(config)
+        False
+        >>> is_knowledge_qa_enabled({})  # 默认启用
+        True
+    """
+    qa_config = get_knowledge_qa_config(config)
+    return qa_config.get('enabled', True)
 
 
 def is_data_source_enabled(config: dict, source_name: str) -> bool:

@@ -44,6 +44,9 @@ htmlcov/
 data/*.db
 data/*.sqlite
 data/*.sqlite3
+data/chroma/
+data/checkpoints/
+data/doc_backups/
 
 # Reports (generated)
 reports/

@@ -92,7 +92,19 @@
 | 手动执行 | `--once` 参数 | - |
 | 时区 | 支持配置时区 | `schedule.timezone` |
 
-### 10. 工具脚本
+### 10. 知识库问答机器人
+
+| 功能 | 说明 | 配置项 |
+|------|------|--------|
+| 向量知识库 | ChromaDB 存储文章向量 | `knowledge_qa.knowledge_base` |
+| 语义搜索 | 基于 Embedding 的相似度检索 | `knowledge_qa.knowledge_base.n_results` |
+| RAG 问答 | 检索增强生成回答 | `knowledge_qa.qa_engine` |
+| 飞书集成 | 支持群聊 @机器人 和私聊 | `knowledge_qa.event_server` |
+| 上下文记忆 | 多轮对话上下文保持 | `knowledge_qa.context_manager` |
+| 频率限制 | 用户级/全局级限流 | `knowledge_qa.rate_limiter` |
+| 来源归属 | 回答附带文章来源链接 | 自动 |
+
+### 11. 工具脚本
 
 | 脚本 | 功能 |
 |------|------|
@@ -100,6 +112,9 @@
 | `scripts/evaluate_feeds.py` | 评估 RSS 源质量 (活跃度/原创性/技术深度) |
 | `scripts/merge_opml.py` | 多个 OPML 文件去重合并 |
 | `scripts/setup_bitable.py` | 初始化飞书多维表格 |
+| `scripts/init_knowledge_base.py` | 初始化/重建知识库 |
+| `scripts/sync_knowledge_base.py` | 增量同步知识库 |
+| `scripts/run_qa_server.py` | 启动问答服务器 |
 
 ## 运行
 
@@ -122,6 +137,11 @@ python main.py --clear-checkpoint
 
 # 话题聚合
 python scripts/run_topic_aggregation.py --days 7 --stats
+
+# 知识库问答
+python scripts/init_knowledge_base.py --rebuild  # 初始化知识库
+python scripts/sync_knowledge_base.py --hours 24  # 增量同步
+python scripts/run_qa_server.py --port 8080       # 启动问答服务器
 ```
 
 ## 服务器部署
@@ -145,6 +165,8 @@ FEISHU_APP_ID=
 FEISHU_APP_SECRET=
 FEISHU_BITABLE_APP_TOKEN=
 FEISHU_BITABLE_TABLE_ID=
+FEISHU_VERIFICATION_TOKEN=
+FEISHU_ENCRYPT_KEY=
 GITHUB_TOKEN=
 NVD_API_KEY=
 ```
@@ -255,6 +277,29 @@ topic_aggregation:
     - arxiv.org
     - github.com
     - openai.com
+
+# 知识库问答
+knowledge_qa:
+  event_server:
+    host: "0.0.0.0"
+    port: 8080
+    verification_token: "${FEISHU_VERIFICATION_TOKEN}"
+    encrypt_key: "${FEISHU_ENCRYPT_KEY:}"
+  knowledge_base:
+    persist_directory: "data/chroma"
+    collection_name: "articles"
+    chunk_size: 500
+    chunk_overlap: 50
+    n_results: 5
+  context_manager:
+    max_history: 10
+    ttl_minutes: 30
+  rate_limiter:
+    max_requests_per_minute: 10
+    global_max_requests_per_minute: 100
+  qa_engine:
+    max_answer_length: 500
+    min_confidence: 0.3
 ```
 
 ## 项目结构
@@ -289,6 +334,16 @@ src/
 │   ├── knowledge_rss_generator.py # RSS 生成
 │   ├── topic_aggregation_system.py # 系统主类
 │   └── models.py                # 数据模型
+├── qa/                           # 知识库问答
+│   ├── embedding_service.py     # 文本向量化
+│   ├── knowledge_base.py        # ChromaDB 知识库
+│   ├── context_manager.py       # 对话上下文
+│   ├── query_processor.py       # 查询解析
+│   ├── qa_engine.py             # RAG 问答引擎
+│   ├── rate_limiter.py          # 频率限制
+│   ├── event_server.py          # 飞书事件服务器
+│   ├── config.py                # QA 配置
+│   └── models.py                # QA 数据模型
 ├── evaluators/
 │   └── rss_evaluator.py         # RSS 源质量评估
 ├── processors/
@@ -305,7 +360,10 @@ scripts/
 ├── run_topic_aggregation.py     # 话题聚合脚本
 ├── evaluate_feeds.py            # RSS 评估脚本
 ├── merge_opml.py                # OPML 合并脚本
-└── setup_bitable.py             # 多维表格初始化
+├── setup_bitable.py             # 多维表格初始化
+├── init_knowledge_base.py       # 知识库初始化
+├── sync_knowledge_base.py       # 知识库增量同步
+└── run_qa_server.py             # 问答服务器启动
 ```
 
 ## 测试

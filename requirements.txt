@@ -26,6 +26,12 @@ playwright>=1.40.0
 # 数据库
 # SQLite内置于Python标准库
 
+# 向量数据库 - 知识库问答
+chromadb>=0.4.22
+
+# Web框架 - 飞书事件服务器
+flask>=3.0.0
+
 # 文本相似度
 # difflib - Python标准库，无需安装
 

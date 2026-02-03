@@ -167,6 +167,45 @@ priority_scoring:
     arxiv: 1.0
     rss: 0.8
 
+# 知识库问答配置
+# Knowledge QA Configuration
+knowledge_qa:
+  enabled: true
+  
+  # ChromaDB 配置
+  chroma:
+    path: "data/chroma_db"
+    collection_name: "knowledge_articles"
+  
+  # Embedding 配置
+  embedding:
+    model: "text-embedding-3-small"
+  
+  # 事件服务器配置
+  event_server:
+    host: "0.0.0.0"
+    port: 8080
+    verification_token: "${FEISHU_VERIFICATION_TOKEN}"
+    encrypt_key: "${FEISHU_ENCRYPT_KEY:}"
+  
+  # 问答配置
+  qa:
+    max_context_turns: 5
+    context_ttl_minutes: 30
+    max_retrieved_docs: 5
+    min_relevance_score: 0.5
+    answer_max_length: 1000
+  
+  # 分块配置
+  chunking:
+    chunk_size: 500
+    chunk_overlap: 50
+  
+  # 频率限制
+  rate_limit:
+    requests_per_minute: 20
+    requests_per_user_minute: 5
+
 # 话题聚合配置
 # Topic Aggregation Configuration
 topic_aggregation:

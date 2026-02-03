@@ -741,8 +741,8 @@ class Scheduler:
                         success = feishu_bot.push_articles(articles_to_push)
                     
                     if success:
-                        # 步骤8: 标记文章为已推送（标记所有未推送的，不只是筛选后的）
-                        article_ids = [a['id'] for a in unpushed_articles if a.get('id')]
+                        # 步骤8: 标记已推送的文章（只标记实际推送的）
+                        article_ids = [a['id'] for a in articles_to_push if a.get('id')]
                         repository.mark_as_pushed(article_ids)
                         logger.info(f"Marked {len(article_ids)} articles as pushed")
                         
@@ -752,9 +752,9 @@ class Scheduler:
                             try:
                                 bitable = components['feishu_bitable']
                                 # 更新推送状态后同步
-                                for article in unpushed_articles:
+                                for article in articles_to_push:
                                     article['is_pushed'] = True
-                                sync_count = bitable.batch_add_records(unpushed_articles)
+                                sync_count = bitable.batch_add_records(articles_to_push)
                                 logger.info(f"Synced {sync_count} articles to Feishu Bitable")
                             except Exception as e:
                                 logger.error(f"Failed to sync to Bitable: {e}")

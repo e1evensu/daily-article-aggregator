@@ -670,6 +670,8 @@ class Scheduler:
                                 logger.error(f"Failed to sync to Bitable: {e}")
                     else:
                         logger.error("Failed to push articles to Feishu")
+                        # 推送失败，抛出异常以保留检查点
+                        raise RuntimeError("Feishu push failed, checkpoint preserved for retry")
                 else:
                     logger.info("No unpushed articles to push")
             else:

@@ -58,25 +58,48 @@ def load_articles_from_db(
     Returns:
         文章列表
     """
+    import os
+    if not os.path.exists(db_path):
+        logger.warning(f"数据库文件不存在: {db_path}")
+        return []
+    
     repo = ArticleRepository(db_path)
     
     # 计算时间范围
     cutoff_date = datetime.now() - timedelta(days=days)
     
-    # 获取所有文章
-    all_articles = repo.get_all_articles()
+    # 获取所有文章（使用 SQL 查询）
+    try:
+        conn = repo._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM articles ORDER BY fetched_at DESC")
+        rows = cursor.fetchall()
+    except Exception as e:
+        logger.warning(f"查询数据库失败: {e}")
+        repo.close()
+        return []
     
     # 过滤时间范围内的文章
     articles = []
-    for article_dict in all_articles:
+    for row in rows:
         try:
+            article_dict = repo._row_to_dict(row)
+            
             # 解析日期
             fetched_at = article_dict.get('fetched_at', '')
             if fetched_at:
                 if isinstance(fetched_at, str):
-                    article_date = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                    try:
+                        article_date = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
+                    except ValueError:
+                        # 尝试其他格式
+                        article_date = datetime.now()
                 else:
                     article_date = fetched_at
+                
+                # 移除时区信息进行比较
+                if hasattr(article_date, 'replace'):
+                    article_date = article_date.replace(tzinfo=None)
                 
                 if article_date < cutoff_date:
                     continue
@@ -92,7 +115,6 @@ def load_articles_from_db(
                 content=article_dict.get('content', ''),
                 published_date=article_dict.get('published_date', ''),
                 category=article_dict.get('category', ''),
-                cve_id=article_dict.get('cve_id', ''),
             )
             articles.append(article)
         except Exception as e:
@@ -175,6 +197,7 @@ def main():
             'app_id': config.get('feishu_bitable', {}).get('app_id', ''),
             'app_secret': config.get('feishu_bitable', {}).get('app_secret', ''),
             'folder_token': topic_config.get('feishu_doc_folder_token', ''),
+            'backup_dir': 'data/doc_backups',
         },
         'rss_generator': {
             'output_path': topic_config.get('rss_output_path', 'data/knowledge_feed.xml'),

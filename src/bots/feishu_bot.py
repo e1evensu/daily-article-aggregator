@@ -1,12 +1,17 @@
 """
-飞书Webhook机器人模块
+飞书机器人模块
 
-实现飞书Webhook消息推送功能，支持文本消息和富文本消息。
+实现飞书消息推送功能：
+1. Webhook 机器人：通过 Webhook URL 发送消息到群
+2. 应用机器人：通过 app_id/app_secret 主动发送消息给用户
 """
 
 import logging
-import requests
+import time
+from datetime import datetime, timedelta
 from typing import Optional
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -321,3 +326,320 @@ class FeishuBot:
         
         logger.info(f"推送 {len(valid_articles)} 篇文章到飞书")
         return self.send_rich_text(title, content)
+
+
+
+class FeishuAppBot:
+    """
+    飞书应用机器人
+    
+    通过飞书应用凭证（app_id/app_secret）发送消息。
+    支持发送消息给用户、群组，以及创建文档等高级功能。
+    
+    Attributes:
+        app_id: 飞书应用 ID
+        app_secret: 飞书应用密钥
+        timeout: 请求超时时间（秒）
+    """
+    
+    BASE_URL = "https://open.feishu.cn/open-apis"
+    
+    def __init__(
+        self, 
+        app_id: str, 
+        app_secret: str, 
+        timeout: int = 30
+    ):
+        """
+        初始化飞书应用机器人
+        
+        Args:
+            app_id: 飞书应用 ID
+            app_secret: 飞书应用密钥
+            timeout: 请求超时时间（秒），默认30秒
+            
+        Raises:
+            ValueError: 如果 app_id 或 app_secret 为空
+        """
+        if not app_id or not app_id.strip():
+            raise ValueError("app_id 不能为空")
+        if not app_secret or not app_secret.strip():
+            raise ValueError("app_secret 不能为空")
+        
+        self.app_id = app_id.strip()
+        self.app_secret = app_secret.strip()
+        self.timeout = timeout
+        
+        # Token 缓存
+        self._tenant_access_token: Optional[str] = None
+        self._token_expires_at: Optional[datetime] = None
+    
+    def get_tenant_access_token(self) -> Optional[str]:
+        """
+        获取 tenant_access_token
+        
+        飞书应用的访问令牌，用于调用各种 API。
+        会自动缓存 token，在过期前 5 分钟刷新。
+        
+        Returns:
+            tenant_access_token，失败返回 None
+        """
+        # 检查缓存的 token 是否有效
+        if self._tenant_access_token and self._token_expires_at:
+            if datetime.now() < self._token_expires_at:
+                return self._tenant_access_token
+        
+        try:
+            url = f"{self.BASE_URL}/auth/v3/tenant_access_token/internal"
+            response = requests.post(
+                url,
+                json={
+                    "app_id": self.app_id,
+                    "app_secret": self.app_secret
+                },
+                timeout=self.timeout,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code != 200:
+                logger.error(
+                    f"获取 tenant_access_token 失败: HTTP {response.status_code}"
+                )
+                return None
+            
+            data = response.json()
+            if data.get('code') != 0:
+                logger.error(
+                    f"获取 tenant_access_token 失败: {data.get('msg')}"
+                )
+                return None
+            
+            self._tenant_access_token = data.get('tenant_access_token')
+            # Token 有效期通常是 2 小时，提前 5 分钟刷新
+            expire_seconds = data.get('expire', 7200) - 300
+            self._token_expires_at = datetime.now() + timedelta(seconds=expire_seconds)
+            
+            logger.debug("tenant_access_token 获取成功")
+            return self._tenant_access_token
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"获取 tenant_access_token 超时: {self.timeout}秒")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"获取 tenant_access_token 请求异常: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"获取 tenant_access_token 时发生错误: {e}")
+            return None
+    
+    def _get_headers(self) -> Optional[dict]:
+        """
+        获取带有授权的请求头
+        
+        Returns:
+            请求头字典，获取 token 失败返回 None
+        """
+        token = self.get_tenant_access_token()
+        if not token:
+            return None
+        
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+    
+    def send_message_to_user(
+        self, 
+        user_id: str, 
+        msg_type: str, 
+        content: dict,
+        receive_id_type: str = "open_id"
+    ) -> bool:
+        """
+        发送消息给用户
+        
+        Args:
+            user_id: 用户 ID（open_id、user_id 或 union_id）
+            msg_type: 消息类型（text、post、interactive 等）
+            content: 消息内容
+            receive_id_type: 接收者 ID 类型，默认 open_id
+                可选值: open_id, user_id, union_id, email, chat_id
+            
+        Returns:
+            是否发送成功
+        """
+        headers = self._get_headers()
+        if not headers:
+            logger.error("无法获取访问令牌，发送消息失败")
+            return False
+        
+        try:
+            url = f"{self.BASE_URL}/im/v1/messages"
+            params = {"receive_id_type": receive_id_type}
+            
+            payload = {
+                "receive_id": user_id,
+                "msg_type": msg_type,
+                "content": content if isinstance(content, str) else json.dumps(content)
+            }
+            
+            response = requests.post(
+                url,
+                params=params,
+                headers=headers,
+                json=payload,
+                timeout=self.timeout
+            )
+            
+            if response.status_code != 200:
+                logger.error(
+                    f"发送消息失败: HTTP {response.status_code}, "
+                    f"响应: {response.text}"
+                )
+                return False
+            
+            data = response.json()
+            if data.get('code') != 0:
+                logger.error(f"发送消息失败: {data.get('msg')}")
+                return False
+            
+            logger.info(f"消息发送成功: {user_id}")
+            return True
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"发送消息超时: {self.timeout}秒")
+            return False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"发送消息请求异常: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"发送消息时发生错误: {e}")
+            return False
+    
+    def send_text_to_user(self, user_id: str, text: str) -> bool:
+        """
+        发送文本消息给用户
+        
+        Args:
+            user_id: 用户 open_id
+            text: 消息文本
+            
+        Returns:
+            是否发送成功
+        """
+        if not text or not text.strip():
+            logger.warning("尝试发送空文本消息")
+            return False
+        
+        content = {"text": text}
+        return self.send_message_to_user(user_id, "text", content)
+    
+    def send_message_to_chat(
+        self, 
+        chat_id: str, 
+        msg_type: str, 
+        content: dict
+    ) -> bool:
+        """
+        发送消息到群聊
+        
+        Args:
+            chat_id: 群聊 ID
+            msg_type: 消息类型
+            content: 消息内容
+            
+        Returns:
+            是否发送成功
+        """
+        return self.send_message_to_user(
+            chat_id, 
+            msg_type, 
+            content, 
+            receive_id_type="chat_id"
+        )
+    
+    def send_rich_text_to_user(
+        self, 
+        user_id: str, 
+        title: str, 
+        content: list
+    ) -> bool:
+        """
+        发送富文本消息给用户
+        
+        Args:
+            user_id: 用户 open_id
+            title: 消息标题
+            content: 富文本内容（飞书格式）
+            
+        Returns:
+            是否发送成功
+        """
+        post_content = {
+            "zh_cn": {
+                "title": title,
+                "content": content
+            }
+        }
+        return self.send_message_to_user(user_id, "post", post_content)
+    
+    def push_articles_to_user(
+        self, 
+        user_id: str, 
+        articles: list[dict]
+    ) -> bool:
+        """
+        推送文章列表给用户
+        
+        Args:
+            user_id: 用户 open_id
+            articles: 文章列表
+            
+        Returns:
+            是否推送成功
+        """
+        if not articles:
+            logger.info("没有文章需要推送")
+            return True
+        
+        # 过滤有效文章
+        valid_articles = [
+            a for a in articles 
+            if a.get('title', '').strip() and a.get('url', '').strip()
+        ]
+        
+        if not valid_articles:
+            logger.warning("所有文章都缺少必要字段")
+            return False
+        
+        # 构建富文本内容
+        content = []
+        for i, article in enumerate(valid_articles, 1):
+            title = article.get('title', '').strip()
+            url = article.get('url', '').strip()
+            
+            # 文章标题行（带链接）
+            title_line = [
+                {"tag": "text", "text": f"{i}. "},
+                {"tag": "a", "text": title, "href": url}
+            ]
+            content.append(title_line)
+            
+            # 摘要行
+            zh_summary = article.get('zh_summary', '').strip()
+            summary = article.get('summary', '').strip()
+            
+            if zh_summary:
+                content.append([{"tag": "text", "text": f"   摘要: {zh_summary}"}])
+            elif summary:
+                content.append([{"tag": "text", "text": f"   摘要: {summary}"}])
+            
+            # 空行分隔
+            content.append([{"tag": "text", "text": ""}])
+        
+        title = f"📚 今日文章推荐 ({len(valid_articles)}篇)"
+        return self.send_rich_text_to_user(user_id, title, content)
+
+
+# 需要导入 json 模块
+import json

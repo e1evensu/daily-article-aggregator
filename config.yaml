@@ -100,10 +100,11 @@ data_sources:
     timeout: 30
   
   nvd:
-    enabled: false  # 禁用 NVD，每天数百个低质量 CVE
-    api_key: "${NVD_API_KEY:}"  # 可选，有 key 速率更高
+    enabled: true
+    api_key: "${NVD_API_KEY:}"
     days_back: 7
     timeout: 60
+    min_cvss_score: 7.0  # 只保留高危漏洞 (CVSS >= 7.0)
   
   kev:
     enabled: true
@@ -143,6 +144,14 @@ tiered_push:
   level1_threshold: 0.10  # 前 10%
   level2_threshold: 0.40  # 10%-40%
   # level3 为剩余部分 (40%-100%)
+
+# 智能筛选配置
+# Smart Selector Configuration
+smart_selector:
+  enabled: true
+  max_articles: 30          # 每日最多推送文章数
+  min_quality_score: 50     # 最低质量分（0-100）
+  source_balance: true      # 是否平衡不同来源
 
 # 优先级评分配置
 # Priority Scoring Configuration

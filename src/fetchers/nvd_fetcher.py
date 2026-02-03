@@ -64,6 +64,7 @@ class NVDFetcher(BaseFetcher):
         self.api_key: str | None = config.get('api_key') or None
         self.days_back: int = config.get('days_back', 7)
         self.timeout: int = config.get('timeout', 60)
+        self.min_cvss_score: float = config.get('min_cvss_score', 0.0)  # CVSS 最低分数过滤
     
     def is_enabled(self) -> bool:
         """
@@ -138,9 +139,18 @@ class NVDFetcher(BaseFetcher):
                 cve_item = vuln.get('cve', {})
                 parsed = self._parse_cve(cve_item)
                 if parsed:
+                    # CVSS 分数过滤
+                    cvss_score = parsed.get('cvss_score')
+                    if self.min_cvss_score > 0 and (cvss_score is None or cvss_score < self.min_cvss_score):
+                        continue
                     items.append(parsed)
             
-            logger.info(f"NVD Fetcher: 获取了 {len(items)} 个 CVE")
+            # 统计过滤结果
+            filtered_count = len(vulnerabilities) - len(items)
+            if filtered_count > 0:
+                logger.info(f"NVD: 过滤掉 {filtered_count} 个低危漏洞 (CVSS < {self.min_cvss_score})")
+            
+            logger.info(f"NVD Fetcher: 获取了 {len(items)} 个高危 CVE")
             
             return FetchResult(
                 items=items,

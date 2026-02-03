@@ -251,6 +251,16 @@ class Scheduler:
                     components.get('ai_analyzer')
                 )
                 logger.info("TieredPusher initialized")
+            
+            # Smart Selector
+            smart_selector_config = self.config.get('smart_selector', {})
+            if smart_selector_config.get('enabled', True):  # 默认启用
+                from src.pushers.smart_selector import SmartSelector
+                components['smart_selector'] = SmartSelector(
+                    smart_selector_config,
+                    components.get('ai_analyzer')
+                )
+                logger.info("SmartSelector initialized")
         
         # 飞书多维表格（用于数据可视化）
         if BITABLE_AVAILABLE:
@@ -697,6 +707,14 @@ class Scheduler:
                 if unpushed_articles:
                     logger.info(f"Found {len(unpushed_articles)} unpushed articles")
                     
+                    # 智能筛选（如果可用）
+                    articles_to_push = unpushed_articles
+                    if 'smart_selector' in components:
+                        logger.info("Using smart selector to filter articles...")
+                        smart_selector = components['smart_selector']
+                        articles_to_push = smart_selector.select_articles(unpushed_articles)
+                        logger.info(f"Smart selector: {len(articles_to_push)}/{len(unpushed_articles)} articles selected")
+                    
                     # 使用分级推送（如果可用）
                     if 'tiered_pusher' in components and 'priority_scorer' in components:
                         logger.info("Using tiered push with priority scoring...")
@@ -705,7 +723,7 @@ class Scheduler:
                             tiered_pusher = components['tiered_pusher']
                             
                             # 评分
-                            scored_articles = priority_scorer.score_articles(unpushed_articles)
+                            scored_articles = priority_scorer.score_articles(articles_to_push)
                             
                             # 排序
                             sorted_articles = priority_scorer.sort_by_priority(scored_articles)
@@ -717,13 +735,13 @@ class Scheduler:
                             success = tiered_pusher.push_tiered(tiered_articles)
                         except Exception as e:
                             logger.error(f"Tiered push failed, falling back to standard push: {e}")
-                            success = feishu_bot.push_articles(unpushed_articles)
+                            success = feishu_bot.push_articles(articles_to_push)
                     else:
                         # 标准推送
-                        success = feishu_bot.push_articles(unpushed_articles)
+                        success = feishu_bot.push_articles(articles_to_push)
                     
                     if success:
-                        # 步骤8: 标记文章为已推送
+                        # 步骤8: 标记文章为已推送（标记所有未推送的，不只是筛选后的）
                         article_ids = [a['id'] for a in unpushed_articles if a.get('id')]
                         repository.mark_as_pushed(article_ids)
                         logger.info(f"Marked {len(article_ids)} articles as pushed")

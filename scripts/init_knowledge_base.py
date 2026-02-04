@@ -28,7 +28,8 @@ sys.path.insert(0, str(project_root))
 from src.config import load_config
 from src.repository import ArticleRepository
 from src.qa.knowledge_base import KnowledgeBase
-from src.qa.config import KnowledgeBaseConfig
+from src.qa.config import QAConfig
+from src.qa.embedding_service import EmbeddingService
 
 # 配置日志
 logging.basicConfig(
@@ -61,11 +62,13 @@ def init_knowledge_base(
     # 加载配置
     config = load_config()
     
-    # 初始化知识库
-    kb_config = KnowledgeBaseConfig.from_dict(
-        config.get("knowledge_qa", {}).get("knowledge_base", {})
-    )
-    knowledge_base = KnowledgeBase(kb_config)
+    # 初始化知识库配置
+    qa_config = QAConfig.from_dict(config.get("knowledge_qa", {}))
+    knowledge_base = KnowledgeBase(qa_config)
+    
+    # 初始化 Embedding 服务
+    embedding_service = EmbeddingService(qa_config.embedding)
+    knowledge_base.set_embedding_service(embedding_service)
     
     # 如果需要重建，先清空
     if rebuild:

@@ -47,8 +47,8 @@ class EmbeddingService:
         
         Args:
             config: 配置字典，包含：
-                - api_base: API 地址（可选，默认 https://api.openai.com/v1）
-                - api_key: API 密钥（必需）
+                - api_base: API 地址（可选，默认从 OPENAI_API_BASE 环境变量读取）
+                - api_key: API 密钥（可选，默认从 OPENAI_API_KEY 环境变量读取）
                 - model: 模型名称（可选，默认 text-embedding-3-small）
                 - dimension: 向量维度（可选，默认 1536）
                 - timeout: 超时时间秒数（可选，默认 60）
@@ -65,9 +65,11 @@ class EmbeddingService:
         
         Requirements: 1.1
         """
-        # 提取配置参数
-        api_base = config.get('api_base', 'https://api.openai.com/v1')
-        api_key = config.get('api_key', '')
+        import os
+        
+        # 提取配置参数，优先使用配置，其次使用环境变量
+        api_base = config.get('api_base') or os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1')
+        api_key = config.get('api_key') or os.getenv('OPENAI_API_KEY', '')
         
         if not api_key:
             logger.warning("EmbeddingService initialized without API key")

@@ -66,8 +66,12 @@ def init_knowledge_base(
     qa_config = QAConfig.from_dict(config.get("knowledge_qa", {}))
     knowledge_base = KnowledgeBase(qa_config)
     
-    # 初始化 Embedding 服务
-    embedding_service = EmbeddingService(qa_config.embedding)
+    # 初始化 Embedding 服务（需要传字典，并补充 AI 配置中的 api_base 和 api_key）
+    ai_config = config.get("ai", {})
+    embedding_dict = qa_config.embedding.to_dict()
+    embedding_dict.setdefault('api_base', ai_config.get('api_base', 'https://api.openai.com/v1'))
+    embedding_dict.setdefault('api_key', ai_config.get('api_key', ''))
+    embedding_service = EmbeddingService(embedding_dict)
     knowledge_base.set_embedding_service(embedding_service)
     
     # 如果需要重建，先清空

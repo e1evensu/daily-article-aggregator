@@ -42,8 +42,7 @@ from src.qa.config import (
     EventServerConfig,
     QAConfig,
     RateLimitConfig,
-    QAEngineConfig,
-    EmbeddingConfig
+    QAEngineConfig
 )
 from src.bots.feishu_bot import FeishuAppBot
 from src.analyzers.ai_analyzer import AIAnalyzer
@@ -80,8 +79,7 @@ def create_qa_components(config: dict) -> dict:
     
     # 创建并设置 Embedding 服务
     logger.info("初始化 Embedding 服务...")
-    embedding_config = EmbeddingConfig.from_dict(qa_config.get("embedding", {}))
-    embedding_service = EmbeddingService(embedding_config)
+    embedding_service = EmbeddingService(qa_config.get("embedding", {}))
     knowledge_base.set_embedding_service(embedding_service)
     
     kb_stats = knowledge_base.get_stats()

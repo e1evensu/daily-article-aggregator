@@ -26,18 +26,18 @@ logger = logging.getLogger(__name__)
 
 
 # RAG 提示词模板
-DEFAULT_RAG_SYSTEM_PROMPT = """你是一个专业的技术知识库问答助手。你的任务是基于提供的参考资料回答用户的问题。
+DEFAULT_RAG_SYSTEM_PROMPT = """你是一个专业的技术问答助手，拥有丰富的知识。你可以访问一个知识库作为额外的参考资料。
 
 回答要求：
-1. 基于参考资料中的内容进行回答，不要编造信息
-2. 如果参考资料中没有相关信息，请明确告知用户
-3. 回答要简洁、准确、有条理
-4. 在回答末尾列出参考来源（如果有的话）
+1. 综合使用你自己的知识和提供的参考资料来回答问题
+2. 如果参考资料中有相关内容，优先引用并在末尾列出来源
+3. 如果参考资料不够或不相关，直接用你自己的知识回答即可
+4. 回答要简洁、准确、有条理
 5. 使用中文回答"""
 
-DEFAULT_RAG_USER_PROMPT = """请基于以下参考资料回答用户的问题。
+DEFAULT_RAG_USER_PROMPT = """请回答用户的问题。以下是从知识库检索到的可能相关的参考资料，你可以选择性地使用。
 
-## 参考资料
+## 知识库参考资料
 {context}
 
 ## 对话历史
@@ -46,17 +46,24 @@ DEFAULT_RAG_USER_PROMPT = """请基于以下参考资料回答用户的问题。
 ## 用户问题
 {query}
 
-请根据参考资料回答问题。如果参考资料中没有相关信息，请告知用户。回答末尾请列出参考来源链接。"""
+请综合你的知识和参考资料回答问题。如果引用了参考资料，请在末尾列出来源链接。"""
+
+# 无知识库内容时的提示词
+DEFAULT_NO_CONTEXT_SYSTEM_PROMPT = """你是一个专业的技术问答助手，拥有丰富的知识。
+
+回答要求：
+1. 使用你的知识回答用户问题
+2. 回答要简洁、准确、有条理
+3. 如果问题超出你的能力范围，请诚实告知
+4. 使用中文回答"""
+
+DEFAULT_NO_CONTEXT_USER_PROMPT = """用户问题：{query}
+
+请回答这个问题。"""
 
 DEFAULT_NO_CONTEXT_PROMPT = """用户问题：{query}
 
-抱歉，知识库中没有找到与您问题相关的内容。
-
-您可以尝试：
-1. 换一种方式描述您的问题
-2. 使用更具体的关键词
-3. 查询特定来源（如"arXiv上关于XXX的论文"）
-4. 查询特定时间范围（如"最近一周的安全新闻"）"""
+抱歉，我暂时无法回答这个问题。请稍后再试。"""
 
 
 class QAEngine:
@@ -448,7 +455,7 @@ class QAEngine:
         query_type: str
     ) -> QAResponse:
         """
-        生成无结果响应
+        生成无结果响应（使用 AI 通用知识回答）
         
         Args:
             query: 用户问题
@@ -459,6 +466,27 @@ class QAEngine:
         
         Requirements: 3.5
         """
+        # 尝试使用 AI 的通用知识回答
+        try:
+            user_prompt = DEFAULT_NO_CONTEXT_USER_PROMPT.format(query=query)
+            answer = self.ai_analyzer._call_api(
+                user_prompt=user_prompt,
+                system_prompt=DEFAULT_NO_CONTEXT_SYSTEM_PROMPT
+            )
+            
+            if answer:
+                # AI 成功回答，但置信度较低（因为没有知识库支撑）
+                logger.info("Generated answer using AI general knowledge (no KB results)")
+                return QAResponse(
+                    answer=answer,
+                    sources=[],
+                    confidence=0.3,  # 较低置信度，表示非知识库内容
+                    query_type=query_type
+                )
+        except Exception as e:
+            logger.error(f"Error generating AI answer for no-result query: {e}")
+        
+        # AI 也失败了，返回固定提示
         answer = DEFAULT_NO_CONTEXT_PROMPT.format(query=query)
         
         return QAResponse(

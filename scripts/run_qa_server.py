@@ -34,6 +34,7 @@ from src.config import load_config
 from src.qa.event_server import FeishuEventServer
 from src.qa.qa_engine import QAEngine
 from src.qa.knowledge_base import KnowledgeBase
+from src.qa.embedding_service import EmbeddingService
 from src.qa.context_manager import ContextManager
 from src.qa.query_processor import QueryProcessor
 from src.qa.rate_limiter import RateLimiter
@@ -41,7 +42,8 @@ from src.qa.config import (
     EventServerConfig,
     QAConfig,
     RateLimitConfig,
-    QAEngineConfig
+    QAEngineConfig,
+    EmbeddingConfig
 )
 from src.bots.feishu_bot import FeishuAppBot
 from src.analyzers.ai_analyzer import AIAnalyzer
@@ -75,6 +77,13 @@ def create_qa_components(config: dict) -> dict:
         "chunk_overlap": qa_config.get("chunking", {}).get("chunk_overlap", 50),
     }
     knowledge_base = KnowledgeBase(kb_config)
+    
+    # 创建并设置 Embedding 服务
+    logger.info("初始化 Embedding 服务...")
+    embedding_config = EmbeddingConfig.from_dict(qa_config.get("embedding", {}))
+    embedding_service = EmbeddingService(embedding_config)
+    knowledge_base.set_embedding_service(embedding_service)
+    
     kb_stats = knowledge_base.get_stats()
     logger.info(f"知识库已加载: {kb_stats['total_documents']} 个文档")
     

@@ -18,10 +18,11 @@ from openai import OpenAI, APIError, APITimeoutError, APIConnectionError, RateLi
 logger = logging.getLogger(__name__)
 
 # 默认配置
-DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
-DEFAULT_EMBEDDING_DIMENSION = 1536  # text-embedding-3-small 的默认维度
+DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B"  # SiliconFlow 支持的模型
+DEFAULT_EMBEDDING_DIMENSION = 4096  # Qwen3-Embedding-8B 的默认维度
 MAX_RETRIES = 3
 INITIAL_RETRY_DELAY = 1.0  # 初始重试延迟（秒）
+DEFAULT_RATE_LIMIT_DELAY = 0.2  # 默认请求间隔（秒）
 
 
 class EmbeddingService:
@@ -52,12 +53,13 @@ class EmbeddingService:
                 - dimension: 向量维度（可选，默认 1536）
                 - timeout: 超时时间秒数（可选，默认 60）
                 - max_retries: 最大重试次数（可选，默认 3）
+                - rate_limit_delay: 请求间隔秒数（可选，默认 0.2）
         
         Examples:
             >>> config = {
-            ...     'api_base': 'https://api.openai.com/v1',
+            ...     'api_base': 'https://api.siliconflow.cn/v1',
             ...     'api_key': 'sk-xxx',
-            ...     'model': 'text-embedding-3-small'
+            ...     'model': 'BAAI/bge-m3'
             ... }
             >>> service = EmbeddingService(config)
         
@@ -81,11 +83,21 @@ class EmbeddingService:
         self.dimension = config.get('dimension', DEFAULT_EMBEDDING_DIMENSION)
         self.timeout = float(config.get('timeout', 60))
         self.max_retries = int(config.get('max_retries', MAX_RETRIES))
+        self.rate_limit_delay = float(config.get('rate_limit_delay', DEFAULT_RATE_LIMIT_DELAY))
+        self._last_request_time = 0.0
         
         logger.info(
             f"EmbeddingService initialized with model: {self.model}, "
             f"dimension: {self.dimension}, api_base: {api_base}"
         )
+    
+    def _wait_for_rate_limit(self) -> None:
+        """等待以满足限速要求"""
+        if self.rate_limit_delay > 0:
+            elapsed = time.time() - self._last_request_time
+            if elapsed < self.rate_limit_delay:
+                time.sleep(self.rate_limit_delay - elapsed)
+        self._last_request_time = time.time()
     
     def embed_text(self, text: str) -> list[float]:
         """
@@ -105,7 +117,7 @@ class EmbeddingService:
             >>> service = EmbeddingService(config)
             >>> vector = service.embed_text("Hello, world!")
             >>> len(vector)
-            1536
+            1024
             >>> all(isinstance(v, float) for v in vector)
             True
         
@@ -116,6 +128,9 @@ class EmbeddingService:
         
         # 清理文本（移除多余空白）
         cleaned_text = ' '.join(text.split())
+        
+        # 限速：确保请求间隔
+        self._wait_for_rate_limit()
         
         # 使用重试机制调用 API
         last_error: Exception | None = None
@@ -204,7 +219,7 @@ class EmbeddingService:
             >>> vectors = service.embed_batch(["Hello", "World"])
             >>> len(vectors)
             2
-            >>> all(len(v) == 1536 for v in vectors)
+            >>> all(len(v) == 4096 for v in vectors)
             True
         
         Requirements: 1.1
@@ -222,6 +237,12 @@ class EmbeddingService:
                 valid_indices.append(i)
             else:
                 logger.warning(f"Skipping empty text at index {i}")
+        
+        if not cleaned_texts:
+            raise ValueError("All input texts are empty")
+        
+        # 限速：确保请求间隔
+        self._wait_for_rate_limit()
         
         if not cleaned_texts:
             raise ValueError("All input texts are empty")

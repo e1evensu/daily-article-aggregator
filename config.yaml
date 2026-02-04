@@ -179,7 +179,7 @@ knowledge_qa:
   
   # Embedding 配置
   embedding:
-    model: "text-embedding-3-small"
+    model: "Qwen/Qwen3-Embedding-8B"
   
   # 事件服务器配置
   event_server:
@@ -216,7 +216,7 @@ topic_aggregation:
   title_weight: 0.6                 # 标题权重
   keyword_weight: 0.4               # 关键词权重
   use_ai_similarity: true           # 使用 AI 计算相似度（推荐）
-  embedding_model: "text-embedding-3-small"  # Embedding 模型
+  embedding_model: "Qwen/Qwen3-Embedding-8B"  # Embedding 模型
   # 黑名单域名（低质量来源）
   blacklist_domains:
     - csdn.net

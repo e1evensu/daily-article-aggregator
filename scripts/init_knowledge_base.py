@@ -108,40 +108,46 @@ def init_knowledge_base(
             "documents_added": 0
         }
     
-    # 批量处理文章
+    # 批量处理文章（逐篇处理以便更好地跟踪进度和错误）
     processed = 0
     failed = 0
+    skipped = 0
     
-    for i in range(0, total_articles, batch_size):
-        batch = articles[i:i + batch_size]
-        batch_num = i // batch_size + 1
-        total_batches = (total_articles + batch_size - 1) // batch_size
+    for i, article in enumerate(articles):
+        article_id = article["id"]
+        title = article["title"][:50] + "..." if len(article["title"]) > 50 else article["title"]
         
-        logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 篇文章)...")
+        # 进度显示
+        if (i + 1) % 10 == 0 or i == 0:
+            logger.info(f"处理进度: {i + 1}/{total_articles} ({(i + 1) * 100 // total_articles}%)")
         
         try:
-            # 转换为知识库需要的格式（repository 返回的是字典）
-            article_dicts = []
-            for article in batch:
-                article_dict = {
-                    "id": article["id"],
-                    "title": article["title"],
-                    "content": article.get("content") or article.get("summary") or "",
-                    "url": article["url"],
-                    "source": article.get("source", ""),
-                    "source_type": article.get("source_type", ""),
-                    "category": article.get("category"),
-                    "published_date": article.get("published_date", ""),
-                }
-                article_dicts.append(article_dict)
+            content = article.get("content") or article.get("summary") or ""
+            if not content.strip():
+                logger.debug(f"跳过无内容文章 {article_id}: {title}")
+                skipped += 1
+                continue
+            
+            # 转换为知识库需要的格式
+            article_dict = {
+                "id": article_id,
+                "title": article["title"],
+                "content": content,
+                "url": article["url"],
+                "source": article.get("source", ""),
+                "source_type": article.get("source_type", ""),
+                "category": article.get("category"),
+                "published_date": article.get("published_date", ""),
+            }
             
             # 添加到知识库
-            knowledge_base.add_articles(article_dicts)
-            processed += len(batch)
+            knowledge_base.add_articles([article_dict])
+            processed += 1
             
         except Exception as e:
-            logger.error(f"批次 {batch_num} 处理失败: {e}")
-            failed += len(batch)
+            logger.warning(f"文章 {article_id} 处理失败: {e}")
+            failed += 1
+            # 继续处理下一篇，不中断整个流程
     
     # 获取最终统计
     stats_after = knowledge_base.get_stats()
@@ -151,6 +157,7 @@ def init_knowledge_base(
     logger.info("初始化完成")
     logger.info(f"  总文章数: {total_articles}")
     logger.info(f"  成功处理: {processed}")
+    logger.info(f"  跳过(无内容): {skipped}")
     logger.info(f"  处理失败: {failed}")
     logger.info(f"  新增文档: {documents_added}")
     logger.info(f"  知识库总文档: {stats_after['total_documents']}")
@@ -159,6 +166,7 @@ def init_knowledge_base(
     return {
         "total_articles": total_articles,
         "processed": processed,
+        "skipped": skipped,
         "failed": failed,
         "documents_added": documents_added,
         "total_documents": stats_after["total_documents"]

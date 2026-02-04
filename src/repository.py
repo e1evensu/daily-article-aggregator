@@ -213,6 +213,21 @@ class ArticleRepository:
         
         return [self._row_to_dict(row) for row in rows]
     
+    def get_all_articles(self) -> list[dict[str, Any]]:
+        """
+        获取所有文章
+        
+        Returns:
+            所有文章列表，每个文章为字典格式
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM articles ORDER BY fetched_at DESC")
+        rows = cursor.fetchall()
+        
+        return [self._row_to_dict(row) for row in rows]
+    
     def mark_as_pushed(self, article_ids: list[int]):
         """
         标记文章为已推送

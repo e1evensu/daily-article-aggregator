@@ -120,19 +120,18 @@ def init_knowledge_base(
         logger.info(f"处理批次 {batch_num}/{total_batches} ({len(batch)} 篇文章)...")
         
         try:
-            # 转换为知识库需要的格式
+            # 转换为知识库需要的格式（repository 返回的是字典）
             article_dicts = []
             for article in batch:
                 article_dict = {
-                    "id": article.id,
-                    "title": article.title,
-                    "content": article.content or article.summary or "",
-                    "url": article.url,
-                    "source": article.source,
-                    "source_type": article.source_type,
-                    "category": getattr(article, "category", None),
-                    "published_at": article.published_at.isoformat() if article.published_at else None,
-                    "fetched_at": article.fetched_at.isoformat() if article.fetched_at else None,
+                    "id": article["id"],
+                    "title": article["title"],
+                    "content": article.get("content") or article.get("summary") or "",
+                    "url": article["url"],
+                    "source": article.get("source", ""),
+                    "source_type": article.get("source_type", ""),
+                    "category": article.get("category"),
+                    "published_date": article.get("published_date", ""),
                 }
                 article_dicts.append(article_dict)
             

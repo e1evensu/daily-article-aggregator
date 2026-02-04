@@ -388,14 +388,30 @@ class FeishuEventServer:
                 f"sender={event_info['sender_id'][:8] if event_info['sender_id'] else 'unknown'}..."
             )
             
-            # 调用消息处理器
-            if self._message_handler:
-                # 在新线程中处理消息，避免阻塞响应
+            # 调用消息处理器（在后台线程中处理，避免阻塞响应）
+            # 如果设置了消息处理器或 QA 引擎，都需要启动后台线程
+            should_process = (
+                self._message_handler is not None or 
+                (self._qa_engine is not None and event_info.get("should_respond", False))
+            )
+            
+            if should_process:
+                logger.info(
+                    f"Starting background thread for message processing: "
+                    f"has_handler={self._message_handler is not None}, "
+                    f"has_qa_engine={self._qa_engine is not None}, "
+                    f"should_respond={event_info.get('should_respond', False)}"
+                )
                 threading.Thread(
                     target=self._safe_handle_message,
                     args=(event_info,),
                     daemon=True
                 ).start()
+            else:
+                logger.debug(
+                    f"Skipping message processing: no handler and no QA engine configured, "
+                    f"or message does not require response"
+                )
             
             # 立即返回成功响应
             return {"code": 0, "msg": "ok"}, 200
@@ -610,13 +626,27 @@ class FeishuEventServer:
         Requirements: 2.2, 2.3
         """
         try:
+            logger.info(
+                f"Processing message in background thread: "
+                f"should_respond={event_info.get('should_respond', False)}, "
+                f"has_qa_engine={self._qa_engine is not None}, "
+                f"has_feishu_bot={self._feishu_bot is not None}"
+            )
+            
             # 首先调用自定义消息处理器（如果设置了）
             if self._message_handler:
+                logger.debug("Calling custom message handler")
                 self._message_handler(event_info)
             
             # 如果配置了 QAEngine，处理问答请求
             if self._qa_engine and event_info.get("should_respond", False):
-                self.process_qa_message(event_info)
+                logger.info("Calling QA engine to process message")
+                result = self.process_qa_message(event_info)
+                logger.info(f"QA processing result: {result}")
+            elif not self._qa_engine:
+                logger.warning("QA engine not configured, cannot process QA request")
+            elif not event_info.get("should_respond", False):
+                logger.debug("Message does not require response (should_respond=False)")
                 
         except Exception as e:
             logger.error(f"Error in message handler: {e}", exc_info=True)
@@ -924,12 +954,21 @@ class FeishuEventServer:
             logger.warning("Empty message, skipping send")
             return False
         
+        logger.info(
+            f"Attempting to send reply: is_private={is_private}, "
+            f"chat_id={chat_id[:8] if chat_id else 'none'}..., "
+            f"sender_id={sender_id[:8] if sender_id else 'none'}..., "
+            f"message_length={len(message)}"
+        )
+        
         try:
             if is_private:
                 # 私聊：发送给用户
+                logger.info(f"Sending private message to user: {sender_id[:8] if sender_id else 'none'}...")
                 success = self._feishu_bot.send_text_to_user(sender_id, message)
             else:
                 # 群聊：发送到群组
+                logger.info(f"Sending group message to chat: {chat_id[:8] if chat_id else 'none'}...")
                 content = {"text": message}
                 success = self._feishu_bot.send_message_to_chat(
                     chat_id, "text", content
@@ -942,7 +981,11 @@ class FeishuEventServer:
                     f"message_length={len(message)}"
                 )
             else:
-                logger.error("Failed to send reply")
+                logger.error(
+                    f"Failed to send reply: "
+                    f"{'private' if is_private else 'group'}, "
+                    f"check feishu_bot logs for details"
+                )
             
             return success
             

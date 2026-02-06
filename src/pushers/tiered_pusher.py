@@ -114,10 +114,14 @@ class TieredPusher:
         if url:
             lines.append(f"🔗 {url}")
         
-        # 来源信息
-        source_info = source_type.upper() if source_type else source
-        if source_info:
-            lines.append(f"📰 来源: {source_info}")
+        # 来源信息：优先显示具体来源名称，其次显示来源类型
+        if source:
+            # 对于 RSS，显示具体的博客/订阅源名称
+            source_display = f"[{source_type.upper()}] {source}" if source_type else source
+        else:
+            source_display = source_type.upper() if source_type else ""
+        if source_display:
+            lines.append(f"📰 来源: {source_display}")
         
         # 摘要（截断过长的摘要）
         if summary:
@@ -137,6 +141,7 @@ class TieredPusher:
         article = tiered.article
         title = article.get('title', 'Untitled')
         url = article.get('url', '')
+        source = article.get('source', '')
         source_type = article.get('source_type', '')
         
         # 优先使用 zh_summary，其次 summary，最后 short_description
@@ -149,10 +154,17 @@ class TieredPusher:
         # 截断摘要为简短版本
         brief_summary = full_summary[:120] + '...' if len(full_summary) > 120 else full_summary
         
-        prefix = f"[{source_type.upper()}] " if source_type else ""
+        # 来源前缀：优先显示具体来源名称
+        if source and source_type:
+            prefix = f"[{source_type.upper()}] [{source}] "
+        elif source_type:
+            prefix = f"[{source_type.upper()}] "
+        elif source:
+            prefix = f"[{source}] "
+        else:
+            prefix = ""
+        
         lines = [f"• {prefix}{title}"]
-        if url:
-            lines.append(f"  {url}")
         if brief_summary:
             lines.append(f"  {brief_summary}")
         return '\n'.join(lines)
@@ -161,11 +173,20 @@ class TieredPusher:
         """格式化 Level 3 文章（链接）"""
         article = tiered.article
         title = article.get('title', 'Untitled')
-        url = article.get('url', '')
+        source = article.get('source', '')
         source_type = article.get('source_type', '')
         
-        prefix = f"[{source_type.upper()}] " if source_type else ""
-        return f"- {prefix}{title}\n  {url}" if url else f"- {prefix}{title}"
+        # 来源前缀：优先显示具体来源名称
+        if source and source_type:
+            prefix = f"[{source_type.upper()}] [{source}] "
+        elif source_type:
+            prefix = f"[{source_type.upper()}] "
+        elif source:
+            prefix = f"[{source}] "
+        else:
+            prefix = ""
+        
+        return f"- {prefix}{title}"
 
 
     def _build_statistics_header(
@@ -267,6 +288,7 @@ class TieredPusher:
                 article = tiered.article
                 title = article.get('title', 'Untitled')
                 url = article.get('url', '')
+                source = article.get('source', '')
                 source_type = article.get('source_type', '')
                 summary = (
                     article.get('zh_summary', '') or 
@@ -281,9 +303,17 @@ class TieredPusher:
                     {"tag": "a", "text": title, "href": url} if url else {"tag": "text", "text": title}
                 ])
                 
-                # 来源
-                if source_type:
-                    content.append([{"tag": "text", "text": f"📰 来源: {source_type.upper()}"}])
+                # 来源：优先显示具体来源名称
+                if source and source_type:
+                    source_display = f"[{source_type.upper()}] {source}"
+                elif source_type:
+                    source_display = source_type.upper()
+                elif source:
+                    source_display = source
+                else:
+                    source_display = ""
+                if source_display:
+                    content.append([{"tag": "text", "text": f"📰 来源: {source_display}"}])
                 
                 # 摘要
                 if summary:

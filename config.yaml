@@ -127,6 +127,12 @@ data_sources:
       - deepmind
       - anthropic
     timeout: 30
+  
+  hunyuan:
+    enabled: true
+    timeout: 30
+    days_back: 7
+    page_size: 20
 
 # 漏洞过滤配置
 # Vulnerability Filter Configuration
@@ -149,7 +155,7 @@ tiered_push:
 # Smart Selector Configuration
 smart_selector:
   enabled: true
-  max_articles: 30          # 每日最多推送文章数
+  max_articles: 100         # 每日最多推送文章数
   min_quality_score: 50     # 最低质量分（0-100）
   source_balance: true      # 是否平衡不同来源
 

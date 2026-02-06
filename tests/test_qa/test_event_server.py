@@ -825,3 +825,140 @@ class TestMessageEventWithParsing:
             assert event["is_private"] is True
             assert event["should_respond"] is True
             assert event["question"] == "私聊问题"
+
+
+class TestQAIntegration:
+    """测试 QA 引擎集成功能
+    
+    Requirements: 2.2, 2.3
+    """
+    
+    def test_set_qa_engine(self):
+        """测试设置 QA 引擎"""
+        server = FeishuEventServer()
+        
+        # 创建 mock QA engine
+        mock_qa_engine = MagicMock()
+        
+        server.set_qa_engine(mock_qa_engine)
+        
+        assert server.qa_engine is mock_qa_engine
+    
+    def test_set_feishu_bot(self):
+        """测试设置飞书机器人"""
+        server = FeishuEventServer()
+        
+        mock_bot = MagicMock()
+        
+        server.set_feishu_bot(mock_bot)
+        
+        assert server.feishu_bot is mock_bot
+    
+    def test_set_rate_limiter(self):
+        """测试设置频率限制器"""
+        server = FeishuEventServer()
+        
+        mock_limiter = MagicMock()
+        
+        server.set_rate_limiter(mock_limiter)
+        
+        assert server.rate_limiter is mock_limiter
+    
+    def test_init_with_qa_components(self):
+        """测试使用 QA 组件初始化"""
+        mock_qa_engine = MagicMock()
+        mock_bot = MagicMock()
+        mock_limiter = MagicMock()
+        
+        server = FeishuEventServer(
+            qa_engine=mock_qa_engine,
+            feishu_bot=mock_bot,
+            rate_limiter=mock_limiter
+        )
+        
+        assert server.qa_engine is mock_qa_engine
+        assert server.feishu_bot is mock_bot
+        assert server.rate_limiter is mock_limiter
+    
+    def test_get_stats_includes_qa_components(self):
+        """测试统计信息包含 QA 组件状态"""
+        server = FeishuEventServer()
+        
+        stats = server.get_stats()
+        
+        assert "has_qa_engine" in stats
+        assert "has_feishu_bot" in stats
+        assert "has_rate_limiter" in stats
+        assert stats["has_qa_engine"] is False
+        assert stats["has_feishu_bot"] is False
+        assert stats["has_rate_limiter"] is False
+        
+        # 设置组件后
+        server.set_qa_engine(MagicMock())
+        server.set_feishu_bot(MagicMock())
+        server.set_rate_limiter(MagicMock())
+        
+        stats = server.get_stats()
+        assert stats["has_qa_engine"] is True
+        assert stats["has_feishu_bot"] is True
+        assert stats["has_rate_limiter"] is True
+    
+    def test_process_qa_message_without_qa_engine(self):
+        """测试未配置 QA 引擎时不处理消息"""
+        server = FeishuEventServer()
+        
+        event_info = {
+            "should_respond": True,
+            "question": "什么是RAG？",
+            "sender_id": "user123",
+            "chat_id": "chat456",
+            "is_private": True
+        }
+        
+        result = server.process_qa_message(event_info)
+        
+        assert result is None
+    
+    def test_process_qa_message_not_should_respond(self):
+        """测试不需要响应时不处理消息"""
+        server = FeishuEventServer()
+        server.set_qa_engine(MagicMock())
+        
+        event_info = {
+            "should_respond": False,
+            "question": "普通消息",
+            "sender_id": "user123",
+            "chat_id": "chat456",
+            "is_private": False
+        }
+        
+        result = server.process_qa_message(event_info)
+        
+        assert result is None
+    
+    def test_process_qa_message_empty_question(self):
+        """测试空问题时返回错误"""
+        server = FeishuEventServer()
+        server.set_qa_engine(MagicMock())
+        
+        event_info = {
+            "should_respond": True,
+            "question": "",
+            "sender_id": "user123",
+            "chat_id": "chat456",
+            "is_private": True
+        }
+        
+        result = server.process_qa_message(event_info)
+        
+        assert result is not None
+        assert result["success"] is False
+        assert "Empty question" in result["error"]
+    
+    def test_process_qa_message_success_private(self):
+        """测试私聊问答成功处理"""
+        server = FeishuEventServer()
+        
+        # Mock QA engine
+        mock_qa_engine = MagicMock()
+        mock_

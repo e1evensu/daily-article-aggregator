@@ -34,6 +34,7 @@ try:
     from src.fetchers.nvd_fetcher import NVDFetcher
     from src.fetchers.kev_fetcher import KEVFetcher
     from src.fetchers.huggingface_fetcher import HuggingFaceFetcher
+    from src.fetchers.hunyuan_fetcher import HunyuanFetcher
     from src.fetchers.pwc_fetcher import PWCFetcher
     from src.fetchers.blog_fetcher import BlogFetcher
     from src.filters.vulnerability_filter import VulnerabilityFilter
@@ -211,6 +212,12 @@ class Scheduler:
             if hf_config.get('enabled', False):
                 components['huggingface_fetcher'] = HuggingFaceFetcher(hf_config)
                 logger.info("HuggingFaceFetcher initialized")
+            
+            # Hunyuan Research Fetcher (腾讯混元研究)
+            hunyuan_config = data_sources_config.get('hunyuan', {})
+            if hunyuan_config.get('enabled', False):
+                components['hunyuan_fetcher'] = HunyuanFetcher(hunyuan_config)
+                logger.info("HunyuanFetcher initialized")
             
             # PWC Fetcher
             pwc_config = data_sources_config.get('pwc', {})
@@ -551,6 +558,18 @@ class Scheduler:
                         logger.info(f"Blogs: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching blog articles: {e}")
+            
+            # 腾讯混元研究
+            if 'hunyuan_fetcher' in components:
+                logger.info("Step 2.1g: Fetching articles from Hunyuan Research...")
+                try:
+                    articles = components['hunyuan_fetcher'].fetch()
+                    if articles:
+                        new_items = [a for a in articles if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"Hunyuan: 新增 {len(new_items)} 篇，跳过 {len(articles) - len(new_items)} 篇已存在")
+                except Exception as e:
+                    logger.error(f"Error fetching Hunyuan Research articles: {e}")
             
             # 步骤2.2: 漏洞过滤（高级功能）
             if vulnerability_articles and 'vulnerability_filter' in components:

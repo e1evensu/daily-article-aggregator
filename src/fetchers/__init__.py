@@ -13,6 +13,7 @@ from .nvd_fetcher import NVDFetcher, parse_cve
 from .kev_fetcher import KEVFetcher, parse_kev_entry
 from .huggingface_fetcher import HuggingFaceFetcher, parse_huggingface_entry
 from .hunyuan_fetcher import HunyuanFetcher
+from .github_fetcher import GitHubFetcher
 from .pwc_fetcher import PWCFetcher, parse_pwc_paper
 from .blog_fetcher import BlogFetcher, parse_blog_entry
 
@@ -38,6 +39,7 @@ __all__ = [
     "HuggingFaceFetcher",
     "parse_huggingface_entry",
     "HunyuanFetcher",
+    "GitHubFetcher",
     "PWCFetcher",
     "parse_pwc_paper",
     # New fetchers - Tech blogs

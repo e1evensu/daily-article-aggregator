@@ -147,6 +147,10 @@ data_sources:
     days_back: 7
     max_results: 50
     timeout: 30
+  
+  anthropic_red:
+    enabled: true
+    timeout: 30
 
 # 漏洞过滤配置
 # Vulnerability Filter Configuration
@@ -214,7 +218,7 @@ knowledge_qa:
     context_ttl_minutes: 30
     max_retrieved_docs: 5
     min_relevance_score: 0.5
-    answer_max_length: 1000
+    answer_max_length: 4000
   
   # 分块配置
   chunking:

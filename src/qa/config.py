@@ -142,7 +142,7 @@ class QAEngineConfig:
     context_ttl_minutes: int = 30
     max_retrieved_docs: int = 5
     min_relevance_score: float = 0.5
-    answer_max_length: int = 1000
+    answer_max_length: int = 4000
     
     def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
@@ -162,7 +162,7 @@ class QAEngineConfig:
             context_ttl_minutes=data.get("context_ttl_minutes", 30),
             max_retrieved_docs=data.get("max_retrieved_docs", 5),
             min_relevance_score=data.get("min_relevance_score", 0.5),
-            answer_max_length=data.get("answer_max_length", 1000),
+            answer_max_length=data.get("answer_max_length", 4000),
         )
 
 

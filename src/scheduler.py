@@ -34,7 +34,7 @@ try:
     from src.fetchers.nvd_fetcher import NVDFetcher
     from src.fetchers.kev_fetcher import KEVFetcher
     from src.fetchers.huggingface_fetcher import HuggingFaceFetcher
-    from src.fetchers.hunyuan_fetcher import HunyuanFetcher
+    from src.fetchers.web_blog_fetcher import HunyuanFetcher, AnthropicRedFetcher
     from src.fetchers.github_fetcher import GitHubFetcher
     from src.fetchers.pwc_fetcher import PWCFetcher
     from src.fetchers.blog_fetcher import BlogFetcher
@@ -237,6 +237,12 @@ class Scheduler:
             if blogs_config.get('enabled', False):
                 components['blog_fetcher'] = BlogFetcher(blogs_config)
                 logger.info("BlogFetcher initialized")
+            
+            # Anthropic Red Team Fetcher
+            anthropic_red_config = data_sources_config.get('anthropic_red', {})
+            if anthropic_red_config.get('enabled', False):
+                components['anthropic_red_fetcher'] = AnthropicRedFetcher(anthropic_red_config)
+                logger.info("AnthropicRedFetcher initialized")
             
             # Vulnerability Filter
             vuln_filter_config = self.config.get('vulnerability_filter', {})
@@ -570,11 +576,11 @@ class Scheduler:
             if 'hunyuan_fetcher' in components:
                 logger.info("Step 2.1g: Fetching articles from Hunyuan Research...")
                 try:
-                    articles = components['hunyuan_fetcher'].fetch()
-                    if articles:
-                        new_items = [a for a in articles if a.get('url', '') not in existing_urls]
+                    result = components['hunyuan_fetcher'].fetch()
+                    if result.items:
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
                         all_articles.extend(new_items)
-                        logger.info(f"Hunyuan: 新增 {len(new_items)} 篇，跳过 {len(articles) - len(new_items)} 篇已存在")
+                        logger.info(f"Hunyuan: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching Hunyuan Research articles: {e}")
             
@@ -589,6 +595,18 @@ class Scheduler:
                         logger.info(f"GitHub: 新增 {len(new_items)} 个项目，跳过 {len(projects) - len(new_items)} 个已存在")
                 except Exception as e:
                     logger.error(f"Error fetching GitHub projects: {e}")
+            
+            # Anthropic Red Team
+            if 'anthropic_red_fetcher' in components:
+                logger.info("Step 2.1i: Fetching articles from Anthropic Red Team...")
+                try:
+                    result = components['anthropic_red_fetcher'].fetch()
+                    if result.items:
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"Anthropic Red: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
+                except Exception as e:
+                    logger.error(f"Error fetching Anthropic Red Team articles: {e}")
             
             # 步骤2.2: 漏洞过滤（高级功能）
             if vulnerability_articles and 'vulnerability_filter' in components:

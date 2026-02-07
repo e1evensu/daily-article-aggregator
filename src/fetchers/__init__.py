@@ -16,6 +16,7 @@ from .hunyuan_fetcher import HunyuanFetcher
 from .github_fetcher import GitHubFetcher
 from .pwc_fetcher import PWCFetcher, parse_pwc_paper
 from .blog_fetcher import BlogFetcher, parse_blog_entry
+from .web_blog_fetcher import WebBlogFetcher, HunyuanFetcher, AnthropicRedFetcher
 
 __all__ = [
     # Base classes
@@ -45,4 +46,6 @@ __all__ = [
     # New fetchers - Tech blogs
     "BlogFetcher",
     "parse_blog_entry",
+    "WebBlogFetcher",
+    "AnthropicRedFetcher",
 ]

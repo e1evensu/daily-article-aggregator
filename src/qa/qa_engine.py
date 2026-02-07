@@ -498,38 +498,15 @@ class QAEngine:
     
     def _truncate_answer(self, answer: str) -> str:
         """
-        截断过长的回答
+        处理回答（不再截断）
         
         Args:
             answer: 原始回答
         
         Returns:
-            截断后的回答
-        
-        Requirements: 5.3
+            原始回答
         """
-        if not answer:
-            return ""
-        
-        max_length = self._config.answer_max_length
-        if len(answer) <= max_length:
-            return answer
-        
-        # 尝试在句子边界处截断
-        truncated = answer[:max_length]
-        
-        # 寻找最后一个句子结束符
-        for ending in ['。', '！', '？', '.', '!', '?', '\n']:
-            last_pos = truncated.rfind(ending)
-            if last_pos > max_length * 0.7:  # 至少保留70%的内容
-                truncated = truncated[:last_pos + 1]
-                break
-        
-        # 添加截断提示
-        truncated += "\n\n[回答已截断，如需更多信息请继续提问]"
-        
-        logger.debug(f"Answer truncated: {len(answer)} -> {len(truncated)}")
-        return truncated
+        return answer if answer else ""
     
     def _extract_sources(self, docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """

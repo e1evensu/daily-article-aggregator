@@ -316,6 +316,49 @@ class Scheduler:
             except Exception as e:
                 logger.warning(f"Error closing repository: {e}")
     
+    def _push_error_report(
+        self, 
+        feishu_bot, 
+        errors: list[dict], 
+        duration: float
+    ):
+        """
+        推送错误汇总报告到飞书
+        
+        Args:
+            feishu_bot: 飞书机器人实例
+            errors: 错误列表 [{'source': 'xxx', 'error': 'xxx'}, ...]
+            duration: 任务耗时（秒）
+        """
+        if not errors:
+            return
+        
+        try:
+            # 构建错误报告
+            error_lines = []
+            for err in errors:
+                source = err.get('source', 'Unknown')
+                error_msg = err.get('error', 'Unknown error')
+                # 截断过长的错误信息
+                if len(error_msg) > 200:
+                    error_msg = error_msg[:200] + '...'
+                error_lines.append(f"• {source}: {error_msg}")
+            
+            report = f"""⚠️ 数据源抓取异常报告
+
+任务耗时: {duration:.1f}s
+异常数量: {len(errors)}
+
+异常详情:
+{chr(10).join(error_lines)}"""
+            
+            # 使用飞书机器人发送
+            feishu_bot.send_text(report)
+            logger.info(f"错误报告已推送，共 {len(errors)} 个异常")
+            
+        except Exception as e:
+            logger.error(f"推送错误报告失败: {e}")
+    
     def _get_existing_urls(self, repository: ArticleRepository) -> set[str]:
         """
         获取数据库中已存在的所有文章 URL
@@ -371,6 +414,7 @@ class Scheduler:
         
         components = None
         checkpoint_manager = None
+        fetch_errors: list[dict] = []  # 收集抓取错误
         
         try:
             # 初始化组件
@@ -410,6 +454,7 @@ class Scheduler:
                     all_articles.extend(new_papers)
                 except Exception as e:
                     logger.error(f"Error fetching arXiv papers: {e}")
+                    fetch_errors.append({'source': 'arXiv', 'error': str(e)})
             
             # 步骤2: 从RSS订阅源获取文章（支持断点续传）
             if 'rss_fetcher' in components:
@@ -492,6 +537,7 @@ class Scheduler:
                         logger.warning(f"OPML file not found: {opml_path}")
                 except Exception as e:
                     logger.error(f"Error fetching RSS articles: {e}")
+                    fetch_errors.append({'source': 'RSS', 'error': str(e)})
                     # 保存检查点以便下次恢复
                     if checkpoint_manager:
                         checkpoint_manager.save_fetch_checkpoint()
@@ -511,6 +557,7 @@ class Scheduler:
                         logger.info(f"DBLP: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching DBLP papers: {e}")
+                    fetch_errors.append({'source': 'DBLP', 'error': str(e)})
             
             # NVD - 漏洞数据库
             if 'nvd_fetcher' in components:
@@ -523,6 +570,7 @@ class Scheduler:
                         logger.info(f"NVD: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching NVD CVEs: {e}")
+                    fetch_errors.append({'source': 'NVD', 'error': str(e)})
             
             # KEV - CISA 在野利用漏洞
             if 'kev_fetcher' in components:
@@ -535,6 +583,7 @@ class Scheduler:
                         logger.info(f"KEV: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching KEV entries: {e}")
+                    fetch_errors.append({'source': 'KEV', 'error': str(e)})
             
             # HuggingFace Papers
             if 'huggingface_fetcher' in components:
@@ -547,30 +596,37 @@ class Scheduler:
                         logger.info(f"HuggingFace: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching HuggingFace papers: {e}")
+                    fetch_errors.append({'source': 'HuggingFace', 'error': str(e)})
             
             # Papers With Code
             if 'pwc_fetcher' in components:
                 logger.info("Step 2.1e: Fetching papers from Papers With Code...")
                 try:
                     result = components['pwc_fetcher'].fetch()
+                    if result.error:
+                        fetch_errors.append({'source': 'PWC', 'error': result.error})
                     if result.items:
                         new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
                         all_articles.extend(new_items)
                         logger.info(f"PWC: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching PWC papers: {e}")
+                    fetch_errors.append({'source': 'PWC', 'error': str(e)})
             
             # 大厂博客
             if 'blog_fetcher' in components:
                 logger.info("Step 2.1f: Fetching articles from tech blogs...")
                 try:
                     result = components['blog_fetcher'].fetch()
+                    if result.error:
+                        fetch_errors.append({'source': 'Blogs', 'error': result.error})
                     if result.items:
                         new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
                         all_articles.extend(new_items)
                         logger.info(f"Blogs: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching blog articles: {e}")
+                    fetch_errors.append({'source': 'Blogs', 'error': str(e)})
             
             # 腾讯混元研究
             if 'hunyuan_fetcher' in components:
@@ -583,6 +639,7 @@ class Scheduler:
                         logger.info(f"Hunyuan: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching Hunyuan Research articles: {e}")
+                    fetch_errors.append({'source': 'Hunyuan', 'error': str(e)})
             
             # GitHub 热门项目
             if 'github_fetcher' in components:
@@ -595,6 +652,7 @@ class Scheduler:
                         logger.info(f"GitHub: 新增 {len(new_items)} 个项目，跳过 {len(projects) - len(new_items)} 个已存在")
                 except Exception as e:
                     logger.error(f"Error fetching GitHub projects: {e}")
+                    fetch_errors.append({'source': 'GitHub', 'error': str(e)})
             
             # Anthropic Red Team
             if 'anthropic_red_fetcher' in components:
@@ -607,6 +665,7 @@ class Scheduler:
                         logger.info(f"Anthropic Red: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
                 except Exception as e:
                     logger.error(f"Error fetching Anthropic Red Team articles: {e}")
+                    fetch_errors.append({'source': 'Anthropic Red', 'error': str(e)})
             
             # 步骤2.2: 漏洞过滤（高级功能）
             if vulnerability_articles and 'vulnerability_filter' in components:
@@ -836,6 +895,10 @@ class Scheduler:
             duration = (end_time - start_time).total_seconds()
             logger.info(f"=== Task completed at {end_time.isoformat()} "
                        f"(duration: {duration:.2f}s) ===")
+            
+            # 推送错误汇总报告
+            if fetch_errors and 'feishu_bot' in components:
+                self._push_error_report(components['feishu_bot'], fetch_errors, duration)
             
             # 任务成功完成，清理检查点
             if checkpoint_manager:

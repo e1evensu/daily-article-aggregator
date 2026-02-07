@@ -37,11 +37,12 @@ class HunyuanFetcher(BaseFetcher):
         
         Args:
             config: 配置字典，支持以下参数：
+                - enabled: 是否启用（默认 True）
                 - timeout: 请求超时时间（默认 30 秒）
                 - days_back: 获取多少天内的文章（默认 7 天）
                 - page_size: 每页获取数量（默认 20）
         """
-        super().__init__(config)
+        self.config = config or {}
         self.timeout = self.config.get('timeout', 30)
         self.days_back = self.config.get('days_back', 7)
         self.page_size = self.config.get('page_size', 20)
@@ -179,3 +180,12 @@ class HunyuanFetcher(BaseFetcher):
     def source_name(self) -> str:
         """返回数据源名称"""
         return '腾讯混元研究'
+    
+    def is_enabled(self) -> bool:
+        """
+        检查 Fetcher 是否启用
+        
+        Returns:
+            bool: True 如果 Fetcher 已启用
+        """
+        return self.config.get('enabled', True)

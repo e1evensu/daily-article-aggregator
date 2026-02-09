@@ -65,7 +65,9 @@ from src.qa.config import (
     QAEngineConfig,
     ChunkingConfig,
     RateLimitConfig,
+    RetrievalConfig,
     load_qa_config,
+    load_retrieval_config,
 )
 
 # =============================================================================
@@ -103,6 +105,12 @@ from src.qa.event_server import (
     create_event_server,
 )
 
+from src.qa.enhanced_retriever import (
+    EnhancedRetriever,
+    ChunkResult,
+    EnhancedRetrievalResult,
+)
+
 # =============================================================================
 # 公共接口列表
 # =============================================================================
@@ -123,7 +131,9 @@ __all__ = [
     "QAEngineConfig",
     "ChunkingConfig",
     "RateLimitConfig",
+    "RetrievalConfig",
     "load_qa_config",
+    "load_retrieval_config",
     # 服务组件
     "EmbeddingService",
     "create_embedding_service",
@@ -137,4 +147,8 @@ __all__ = [
     # Event Server
     "FeishuEventServer",
     "create_event_server",
+    # Enhanced Retriever
+    "EnhancedRetriever",
+    "ChunkResult",
+    "EnhancedRetrievalResult",
 ]

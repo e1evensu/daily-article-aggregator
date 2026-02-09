@@ -9,16 +9,30 @@ Requirements:
     - 3.3: 使用 LLM 生成综合回答
     - 2.5: 回答中包含来源链接
     - 3.5: 无相关内容时明确告知用户
+    
+RAG Enhancement Requirements:
+    - 3.1: 接受可选的对话历史作为输入
+    - 3.2: 使用对话历史增强查询理解和检索
+    - 3.4: 历史超过 max_history_turns 时只使用最近的轮次
+    - 3.5: 历史为空或未提供时，不使用历史上下文处理查询
+
+Statistics Integration Requirements:
+    - 10.1: 记录问答事件
 """
 
 import logging
-from typing import Any
+import time
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.stats.collector import StatsCollector
 
 from src.qa.knowledge_base import KnowledgeBase
 from src.qa.context_manager import ContextManager
 from src.qa.query_processor import QueryProcessor, ParsedQuery
-from src.qa.config import QAConfig, QAEngineConfig
-from src.qa.models import QAResponse, RetrievalResult, ERROR_CODES
+from src.qa.config import QAConfig, QAEngineConfig, RetrievalConfig
+from src.qa.models import QAResponse, RetrievalResult, ConversationTurn, ERROR_CODES
+from src.qa.history_aware_query_builder import HistoryAwareQueryBuilder
 from src.analyzers.ai_analyzer import AIAnalyzer
 
 # 配置日志
@@ -79,8 +93,9 @@ class QAEngine:
         query_processor: 查询处理器实例
         ai_analyzer: AI 分析器实例（用于生成回答）
         config: 问答引擎配置
+        stats_collector: 统计收集器实例（可选）
     
-    Requirements: 3.1, 3.3
+    Requirements: 3.1, 3.3, 10.1
     """
     
     def __init__(
@@ -89,7 +104,9 @@ class QAEngine:
         context_manager: ContextManager,
         query_processor: QueryProcessor,
         ai_analyzer: AIAnalyzer,
-        config: QAEngineConfig | dict[str, Any] | None = None
+        config: QAEngineConfig | dict[str, Any] | None = None,
+        retrieval_config: RetrievalConfig | dict[str, Any] | None = None,
+        stats_collector: 'StatsCollector | None' = None
     ):
         """
         初始化问答引擎
@@ -100,26 +117,31 @@ class QAEngine:
             query_processor: 查询处理器实例
             ai_analyzer: AI 分析器实例（复用现有）
             config: 问答引擎配置（可选）
+            retrieval_config: RAG 检索增强配置（可选）
+            stats_collector: 统计收集器实例（可选，用于记录问答事件）
         
         Examples:
             >>> from src.qa.knowledge_base import KnowledgeBase
             >>> from src.qa.context_manager import ContextManager
             >>> from src.qa.query_processor import QueryProcessor
             >>> from src.analyzers.ai_analyzer import AIAnalyzer
+            >>> from src.stats.collector import StatsCollector
             >>> 
             >>> kb = KnowledgeBase({'chroma_path': 'data/chroma_db'})
             >>> cm = ContextManager(max_history=5)
             >>> qp = QueryProcessor()
             >>> ai = AIAnalyzer({'api_key': 'xxx', 'model': 'gpt-4'})
+            >>> stats = StatsCollector()
             >>> 
-            >>> engine = QAEngine(kb, cm, qp, ai)
+            >>> engine = QAEngine(kb, cm, qp, ai, stats_collector=stats)
         
-        Requirements: 3.1, 3.3
+        Requirements: 3.1, 3.3, 10.1
         """
         self.knowledge_base = knowledge_base
         self.context_manager = context_manager
         self.query_processor = query_processor
         self.ai_analyzer = ai_analyzer
+        self._stats_collector = stats_collector
         
         # 解析配置
         if config is None:
@@ -129,10 +151,25 @@ class QAEngine:
         else:
             self._config = QAEngineConfig.from_dict(config)
         
+        # 解析 RAG 检索增强配置
+        if retrieval_config is None:
+            self._retrieval_config = RetrievalConfig()
+        elif isinstance(retrieval_config, RetrievalConfig):
+            self._retrieval_config = retrieval_config
+        else:
+            self._retrieval_config = RetrievalConfig.from_dict(retrieval_config)
+        
+        # 初始化历史感知查询构建器
+        self._query_builder = HistoryAwareQueryBuilder(
+            default_max_turns=self._retrieval_config.max_history_turns
+        )
+        
         logger.info(
             f"QAEngine initialized: max_retrieved_docs={self._config.max_retrieved_docs}, "
             f"min_relevance_score={self._config.min_relevance_score}, "
-            f"answer_max_length={self._config.answer_max_length}"
+            f"answer_max_length={self._config.answer_max_length}, "
+            f"max_history_turns={self._retrieval_config.max_history_turns}, "
+            f"stats_enabled={self._stats_collector is not None}"
         )
     
     @property
@@ -140,26 +177,54 @@ class QAEngine:
         """获取问答引擎配置"""
         return self._config
     
+    @property
+    def retrieval_config(self) -> RetrievalConfig:
+        """获取 RAG 检索增强配置"""
+        return self._retrieval_config
+    
+    @property
+    def query_builder(self) -> HistoryAwareQueryBuilder:
+        """获取历史感知查询构建器"""
+        return self._query_builder
+    
+    @property
+    def stats_collector(self) -> 'StatsCollector | None':
+        """获取统计收集器"""
+        return self._stats_collector
+    
+    def set_stats_collector(self, collector: 'StatsCollector') -> None:
+        """
+        设置统计收集器
+        
+        Args:
+            collector: 统计收集器实例
+        """
+        self._stats_collector = collector
+        logger.info("Stats collector set for QAEngine")
+    
     def process_query(
         self,
         query: str,
         user_id: str,
-        chat_id: str | None = None
+        chat_id: str | None = None,
+        history: list[ConversationTurn] | None = None
     ) -> QAResponse:
         """
         处理用户查询
         
         完整的 RAG 问答流程：
         1. 解析查询，检测查询类型
-        2. 从知识库检索相关文档
-        3. 构建对话上下文
-        4. 使用 LLM 生成回答
-        5. 保存对话历史
+        2. 使用历史感知查询构建器构建增强查询（如果提供了历史）
+        3. 从知识库检索相关文档
+        4. 构建对话上下文
+        5. 使用 LLM 生成回答
+        6. 保存对话历史
         
         Args:
             query: 用户问题
             user_id: 用户 ID
             chat_id: 群聊 ID（私聊时为 None）
+            history: 对话历史（可选，用于增强查询理解和检索）
         
         Returns:
             QAResponse 对象，包含回答、来源和置信度
@@ -174,8 +239,23 @@ class QAEngine:
             "RAG（检索增强生成）是一种..."
             >>> print(response.sources)
             [{'title': '...', 'url': '...'}]
+            
+            >>> # 使用对话历史
+            >>> from src.qa.models import ConversationTurn
+            >>> history = [ConversationTurn(query="什么是向量数据库?", answer="向量数据库是...")]
+            >>> response = engine.process_query(
+            ...     "它有什么优点?",
+            ...     user_id="user123",
+            ...     history=history
+            ... )
         
-        Requirements: 3.1, 3.3, 2.5
+        Requirements: 
+            - 3.1: 使用 RAG 架构，接受可选的对话历史作为输入
+            - 3.2: 使用对话历史增强查询理解和检索
+            - 3.3: 使用 LLM 生成综合回答
+            - 3.4: 历史超过 max_history_turns 时只使用最近的轮次
+            - 3.5: 历史为空或未提供时，不使用历史上下文处理查询
+            - 2.5: 回答中包含来源链接
         """
         if not query or not query.strip():
             return QAResponse(
@@ -188,6 +268,9 @@ class QAEngine:
         query = query.strip()
         logger.info(f"Processing query from user {user_id}: {query[:50]}...")
         
+        # 记录开始时间（用于统计响应时间）
+        start_time = time.time()
+        
         try:
             # 1. 解析查询
             parsed_query = self.query_processor.parse_query(query)
@@ -196,17 +279,34 @@ class QAEngine:
                 f"keywords={parsed_query.keywords[:3]}"
             )
             
-            # 2. 构建搜索过滤器并检索文档
-            search_filters = self.query_processor.build_search_filters(parsed_query)
-            retrieved_docs = self._retrieve_documents(query, search_filters)
+            # 2. 使用历史感知查询构建器构建增强查询
+            # Requirement 3.1: 接受可选的对话历史作为输入
+            # Requirement 3.2: 使用对话历史增强查询理解和检索
+            # Requirement 3.4: 历史超过 max_history_turns 时只使用最近的轮次
+            # Requirement 3.5: 历史为空或未提供时，不使用历史上下文处理查询
+            enhanced_query = self._query_builder.build_query(
+                current_query=query,
+                history=history,
+                max_turns=self._retrieval_config.max_history_turns
+            )
             
-            # 3. 过滤低相关性文档
+            logger.debug(
+                f"Enhanced query: original='{query[:30]}...', "
+                f"history_turns={len(history) if history else 0}, "
+                f"enhanced='{enhanced_query[:50]}...'"
+            )
+            
+            # 3. 构建搜索过滤器并检索文档（使用增强查询）
+            search_filters = self.query_processor.build_search_filters(parsed_query)
+            retrieved_docs = self._retrieve_documents(enhanced_query, search_filters)
+            
+            # 4. 过滤低相关性文档
             filtered_docs = self._filter_by_relevance(retrieved_docs)
             
-            # 4. 获取对话上下文
+            # 5. 获取对话上下文（用于 LLM 生成回答）
             context = self.context_manager.get_context(user_id)
             
-            # 5. 生成回答
+            # 6. 生成回答
             if filtered_docs:
                 response = self._generate_answer(
                     query=query,
@@ -218,7 +318,7 @@ class QAEngine:
                 # 无相关内容
                 response = self._generate_no_result_response(query, parsed_query.query_type)
             
-            # 6. 保存对话历史
+            # 7. 保存对话历史
             source_urls = [s.get('url', '') for s in response.sources if s.get('url')]
             self.context_manager.add_turn(
                 user_id=user_id,
@@ -232,6 +332,22 @@ class QAEngine:
                 f"confidence={response.confidence:.2f}, "
                 f"sources={len(response.sources)}"
             )
+            
+            # 记录问答事件到统计系统
+            # Requirement 10.1: 记录问答事件
+            if self._stats_collector:
+                response_time_ms = int((time.time() - start_time) * 1000)
+                try:
+                    self._stats_collector.record_qa_event(
+                        query=query,
+                        answer=response.answer[:500] if response.answer else '',  # 截断长回答
+                        user_id=user_id,
+                        relevance_score=response.confidence,
+                        sources_used=len(response.sources),
+                        response_time_ms=response_time_ms
+                    )
+                except Exception as stats_error:
+                    logger.warning(f"Failed to record QA stats: {stats_error}")
             
             return response
             

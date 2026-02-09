@@ -15,7 +15,7 @@ from .huggingface_fetcher import HuggingFaceFetcher, parse_huggingface_entry
 from .github_fetcher import GitHubFetcher
 from .pwc_fetcher import PWCFetcher, parse_pwc_paper
 from .blog_fetcher import BlogFetcher, parse_blog_entry
-from .web_blog_fetcher import WebBlogFetcher, HunyuanFetcher, AnthropicRedFetcher
+from .web_blog_fetcher import WebBlogFetcher, HunyuanFetcher, AnthropicRedFetcher, AtumBlogFetcher
 
 __all__ = [
     # Base classes
@@ -47,4 +47,5 @@ __all__ = [
     "parse_blog_entry",
     "WebBlogFetcher",
     "AnthropicRedFetcher",
+    "AtumBlogFetcher",
 ]

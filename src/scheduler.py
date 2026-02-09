@@ -34,7 +34,7 @@ try:
     from src.fetchers.nvd_fetcher import NVDFetcher
     from src.fetchers.kev_fetcher import KEVFetcher
     from src.fetchers.huggingface_fetcher import HuggingFaceFetcher
-    from src.fetchers.web_blog_fetcher import HunyuanFetcher, AnthropicRedFetcher
+    from src.fetchers.web_blog_fetcher import HunyuanFetcher, AnthropicRedFetcher, AtumBlogFetcher
     from src.fetchers.github_fetcher import GitHubFetcher
     from src.fetchers.pwc_fetcher import PWCFetcher
     from src.fetchers.blog_fetcher import BlogFetcher
@@ -243,6 +243,12 @@ class Scheduler:
             if anthropic_red_config.get('enabled', False):
                 components['anthropic_red_fetcher'] = AnthropicRedFetcher(anthropic_red_config)
                 logger.info("AnthropicRedFetcher initialized")
+            
+            # Atum Blog Fetcher
+            atum_blog_config = data_sources_config.get('atum_blog', {})
+            if atum_blog_config.get('enabled', False):
+                components['atum_blog_fetcher'] = AtumBlogFetcher(atum_blog_config)
+                logger.info("AtumBlogFetcher initialized")
             
             # Vulnerability Filter
             vuln_filter_config = self.config.get('vulnerability_filter', {})
@@ -666,6 +672,19 @@ class Scheduler:
                 except Exception as e:
                     logger.error(f"Error fetching Anthropic Red Team articles: {e}")
                     fetch_errors.append({'source': 'Anthropic Red', 'error': str(e)})
+            
+            # Atum Blog
+            if 'atum_blog_fetcher' in components:
+                logger.info("Step 2.1j: Fetching articles from Atum Blog...")
+                try:
+                    result = components['atum_blog_fetcher'].fetch()
+                    if result.items:
+                        new_items = [a for a in result.items if a.get('url', '') not in existing_urls]
+                        all_articles.extend(new_items)
+                        logger.info(f"Atum Blog: 新增 {len(new_items)} 篇，跳过 {len(result.items) - len(new_items)} 篇已存在")
+                except Exception as e:
+                    logger.error(f"Error fetching Atum Blog articles: {e}")
+                    fetch_errors.append({'source': 'Atum Blog', 'error': str(e)})
             
             # 步骤2.2: 漏洞过滤（高级功能）
             if vulnerability_articles and 'vulnerability_filter' in components:

@@ -30,6 +30,8 @@ def load_existing_checkpoint(checkpoint_path: str) -> list[dict]:
 
 def save_merged_checkpoint(checkpoint_path: str, evaluations: list[dict]):
     """保存合并后的检查点"""
+    # 确保目录存在
+    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     checkpoint_data = {
         'timestamp': datetime.now().isoformat(),
         'count': len(evaluations),

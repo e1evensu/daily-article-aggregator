@@ -12,12 +12,22 @@ Requirements:
         - 支持消息事件处理
     - 2.2: 支持群聊 @机器人 触发问答
     - 2.3: 支持私聊直接问答
+    
+Enhanced Requirements (Module 4):
+    - 17.1: URL 验证挑战处理
+    - 17.2: 请求签名验证
+    - 17.4: 事件幂等性处理（去重）
+    - 17.5: 健康检查端点
+    - 17.6: 错误处理响应
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import threading
+import time
+from collections import OrderedDict
 from typing import Any, Callable, TYPE_CHECKING
 
 from flask import Flask, request, jsonify
@@ -34,6 +44,86 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class EventDeduplicator:
+    """
+    事件去重器
+    
+    使用 LRU 缓存存储已处理的事件 ID，防止重复处理。
+    
+    Attributes:
+        max_size: 最大缓存大小
+        ttl_seconds: 事件 ID 过期时间（秒）
+    
+    Requirements: 17.4
+    """
+    
+    def __init__(self, max_size: int = 10000, ttl_seconds: int = 300):
+        """
+        初始化事件去重器
+        
+        Args:
+            max_size: 最大缓存大小，默认 10000
+            ttl_seconds: 事件 ID 过期时间（秒），默认 300（5分钟）
+        """
+        self._cache: OrderedDict[str, float] = OrderedDict()
+        self._max_size = max_size
+        self._ttl_seconds = ttl_seconds
+        self._lock = threading.Lock()
+    
+    def is_duplicate(self, event_id: str) -> bool:
+        """
+        检查事件是否重复
+        
+        Args:
+            event_id: 事件 ID
+        
+        Returns:
+            True 如果事件已处理过，False 如果是新事件
+        """
+        if not event_id:
+            return False
+        
+        current_time = time.time()
+        
+        with self._lock:
+            # 清理过期条目
+            self._cleanup_expired(current_time)
+            
+            # 检查是否存在
+            if event_id in self._cache:
+                # 更新访问时间
+                self._cache.move_to_end(event_id)
+                return True
+            
+            # 添加新事件
+            self._cache[event_id] = current_time
+            
+            # 如果超过最大大小，移除最旧的
+            while len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+            
+            return False
+    
+    def _cleanup_expired(self, current_time: float) -> None:
+        """清理过期的事件 ID"""
+        expired_keys = [
+            key for key, timestamp in self._cache.items()
+            if current_time - timestamp > self._ttl_seconds
+        ]
+        for key in expired_keys:
+            del self._cache[key]
+    
+    def clear(self) -> None:
+        """清空缓存"""
+        with self._lock:
+            self._cache.clear()
+    
+    @property
+    def size(self) -> int:
+        """获取当前缓存大小"""
+        return len(self._cache)
+
+
 class FeishuEventServer:
     """
     飞书事件订阅服务器
@@ -42,15 +132,21 @@ class FeishuEventServer:
     支持 URL 验证（challenge 响应）和消息事件处理。
     支持集成 QAEngine 进行问答处理。
     
+    Enhanced Features (Module 4):
+    - 请求签名验证（使用 encrypt_key）
+    - 事件幂等性处理（防止重复处理）
+    - 健康检查端点
+    
     Attributes:
         host: 监听地址
         port: 监听端口
         verification_token: 飞书验证 token
-        encrypt_key: 加密密钥（可选）
+        encrypt_key: 加密密钥（可选，用于签名验证）
         app: Flask 应用实例
         qa_engine: 问答引擎实例（可选）
         feishu_bot: 飞书应用机器人实例（可选）
         rate_limiter: 频率限制器实例（可选）
+        deduplicator: 事件去重器实例
     
     Example:
         >>> from src.qa.event_server import FeishuEventServer
@@ -59,7 +155,8 @@ class FeishuEventServer:
         >>> config = EventServerConfig(
         ...     host="0.0.0.0",
         ...     port=8080,
-        ...     verification_token="your_token"
+        ...     verification_token="your_token",
+        ...     encrypt_key="your_encrypt_key"  # 用于签名验证
         ... )
         >>> server = FeishuEventServer(config)
         >>> 
@@ -77,7 +174,7 @@ class FeishuEventServer:
         >>> server.set_qa_engine(qa_engine)
         >>> server.set_feishu_bot(feishu_bot)
     
-    Requirements: 2.1, 2.2, 2.3
+    Requirements: 2.1, 2.2, 2.3, 17.1, 17.2, 17.4, 17.5, 17.6
     """
     
     def __init__(
@@ -103,7 +200,7 @@ class FeishuEventServer:
             >>> # 集成 QAEngine
             >>> server = FeishuEventServer(config, qa_engine=qa_engine, feishu_bot=bot)
         
-        Requirements: 2.1, 2.2, 2.3
+        Requirements: 2.1, 2.2, 2.3, 17.1, 17.2, 17.4, 17.5
         """
         # 解析配置
         if config is None:
@@ -131,6 +228,9 @@ class FeishuEventServer:
         self._feishu_bot: "FeishuAppBot | None" = feishu_bot
         self._rate_limiter: "RateLimiter | None" = rate_limiter
         
+        # 事件去重器 (Requirement 17.4)
+        self._deduplicator = EventDeduplicator()
+        
         # 服务器线程
         self._server_thread: threading.Thread | None = None
         self._is_running = False
@@ -139,8 +239,24 @@ class FeishuEventServer:
             f"FeishuEventServer initialized: host={self.host}, port={self.port}, "
             f"qa_engine={'enabled' if qa_engine else 'disabled'}, "
             f"feishu_bot={'enabled' if feishu_bot else 'disabled'}, "
-            f"rate_limiter={'enabled' if rate_limiter else 'disabled'}"
+            f"rate_limiter={'enabled' if rate_limiter else 'disabled'}, "
+            f"signature_verification={'enabled' if self.encrypt_key else 'disabled'}"
         )
+    
+    @property
+    def config(self) -> EventServerConfig:
+        """获取事件服务器配置"""
+        return self._config
+    
+    @property
+    def is_running(self) -> bool:
+        """检查服务器是否正在运行"""
+        return self._is_running
+    
+    @property
+    def deduplicator(self) -> EventDeduplicator:
+        """获取事件去重器"""
+        return self._deduplicator
     
     @property
     def config(self) -> EventServerConfig:
@@ -184,14 +300,17 @@ class FeishuEventServer:
         """
         处理事件请求
         
-        解析请求体，验证 token，并根据事件类型分发处理。
+        解析请求体，验证签名和 token，检查幂等性，并根据事件类型分发处理。
         
         Returns:
             响应数据和 HTTP 状态码的元组
         
-        Requirements: 2.1
+        Requirements: 2.1, 17.2, 17.4, 17.6
         """
         try:
+            # 获取原始请求体（用于签名验证）
+            raw_body = request.get_data(as_text=True)
+            
             # 获取请求数据，使用 silent=True 避免抛出异常
             data = request.get_json(silent=True)
             if data is None:
@@ -200,13 +319,18 @@ class FeishuEventServer:
             
             logger.debug(f"Received event: {json.dumps(data, ensure_ascii=False)[:500]}")
             
+            # 验证请求签名 (Requirement 17.2)
+            if self.encrypt_key and not self._verify_signature(raw_body):
+                logger.warning("Request signature verification failed")
+                return {"error": "Invalid signature"}, 401
+            
             # 处理加密消息（如果配置了 encrypt_key）
             if "encrypt" in data and self.encrypt_key:
                 data = self._decrypt_message(data["encrypt"])
                 if data is None:
                     return {"error": "Decryption failed"}, 400
             
-            # 处理 URL 验证请求（challenge）
+            # 处理 URL 验证请求（challenge）(Requirement 17.1)
             if "challenge" in data:
                 return self._handle_verification(data)
             
@@ -214,6 +338,12 @@ class FeishuEventServer:
             if not self._verify_token(data):
                 logger.warning("Token verification failed")
                 return {"error": "Invalid token"}, 401
+            
+            # 检查事件幂等性 (Requirement 17.4)
+            event_id = self._extract_event_id(data)
+            if event_id and self._deduplicator.is_duplicate(event_id):
+                logger.info(f"Duplicate event detected, skipping: {event_id}")
+                return {"code": 0, "msg": "ok"}, 200
             
             # 处理事件
             return self._dispatch_event(data)
@@ -224,6 +354,84 @@ class FeishuEventServer:
         except Exception as e:
             logger.error(f"Error handling event: {e}", exc_info=True)
             return {"error": "Internal server error"}, 500
+    
+    def _verify_signature(self, raw_body: str) -> bool:
+        """
+        验证请求签名
+        
+        飞书使用 HMAC-SHA256 签名验证请求的真实性。
+        签名计算方式：HMAC-SHA256(timestamp + nonce + encrypt_key, body)
+        
+        Args:
+            raw_body: 原始请求体
+        
+        Returns:
+            签名是否有效
+        
+        Requirements: 17.2
+        """
+        if not self.encrypt_key:
+            return True
+        
+        # 获取请求头中的签名信息
+        timestamp = request.headers.get('X-Lark-Request-Timestamp', '')
+        nonce = request.headers.get('X-Lark-Request-Nonce', '')
+        signature = request.headers.get('X-Lark-Signature', '')
+        
+        # 如果没有签名头，可能是旧版本请求，跳过验证
+        if not signature:
+            logger.debug("No signature header found, skipping signature verification")
+            return True
+        
+        # 计算签名
+        sign_string = timestamp + nonce + self.encrypt_key + raw_body
+        calculated_signature = hashlib.sha256(sign_string.encode('utf-8')).hexdigest()
+        
+        if calculated_signature != signature:
+            logger.warning(
+                f"Signature mismatch: expected={calculated_signature[:16]}..., "
+                f"got={signature[:16]}..."
+            )
+            return False
+        
+        logger.debug("Request signature verified successfully")
+        return True
+    
+    def _extract_event_id(self, data: dict) -> str | None:
+        """
+        从事件数据中提取事件 ID
+        
+        飞书事件 ID 可能在不同位置：
+        - 新版格式：header.event_id
+        - 旧版格式：uuid 或 event.message_id
+        
+        Args:
+            data: 事件数据
+        
+        Returns:
+            事件 ID，如果无法提取则返回 None
+        
+        Requirements: 17.4
+        """
+        # 新版格式
+        header = data.get("header", {})
+        event_id = header.get("event_id")
+        if event_id:
+            return event_id
+        
+        # 旧版格式
+        event_id = data.get("uuid")
+        if event_id:
+            return event_id
+        
+        # 使用消息 ID 作为备选
+        event = data.get("event", {})
+        message = event.get("message", {})
+        message_id = message.get("message_id") or event.get("message_id")
+        if message_id:
+            return f"msg_{message_id}"
+        
+        return None
     
     def _handle_verification(self, data: dict) -> tuple[dict, int]:
         """
@@ -1233,6 +1441,7 @@ class FeishuEventServer:
             - has_qa_engine: 是否配置了问答引擎
             - has_feishu_bot: 是否配置了飞书机器人
             - has_rate_limiter: 是否配置了频率限制器
+            - deduplicator_size: 去重器缓存大小
         """
         return {
             "is_running": self._is_running,
@@ -1243,6 +1452,7 @@ class FeishuEventServer:
             "has_qa_engine": self._qa_engine is not None,
             "has_feishu_bot": self._feishu_bot is not None,
             "has_rate_limiter": self._rate_limiter is not None,
+            "deduplicator_size": self._deduplicator.size,
         }
 
 

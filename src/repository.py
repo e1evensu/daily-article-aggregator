@@ -6,9 +6,50 @@
 """
 
 import sqlite3
+import time
+import functools
+import logging
 from datetime import datetime
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, Callable, TypeVar
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
+
+
+def retry_on_locked(max_retries: int = 5, base_delay: float = 0.1):
+    """
+    装饰器：在数据库锁定时自动重试
+    
+    使用指数退避策略重试数据库操作。
+    
+    Args:
+        max_retries: 最大重试次数
+        base_delay: 基础延迟时间（秒）
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            last_exception = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e):
+                        last_exception = e
+                        if attempt < max_retries:
+                            delay = base_delay * (2 ** attempt)
+                            logger.warning(
+                                f"Database locked, retrying in {delay:.2f}s "
+                                f"(attempt {attempt + 1}/{max_retries})"
+                            )
+                            time.sleep(delay)
+                        continue
+                    raise
+            raise last_exception
+        return wrapper
+    return decorator
 
 
 class ArticleRepository:
@@ -21,26 +62,38 @@ class ArticleRepository:
         db_path: SQLite数据库文件路径
     """
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, timeout: float = 30.0):
         """
         初始化仓库
         
         Args:
             db_path: SQLite数据库文件路径，使用':memory:'创建内存数据库
+            timeout: 数据库锁等待超时时间（秒），默认30秒
         """
         self.db_path = db_path
+        self.timeout = timeout
         self._connection: sqlite3.Connection | None = None
     
     def _get_connection(self) -> sqlite3.Connection:
         """
         获取数据库连接
         
+        使用WAL模式提高并发性能，设置超时时间避免锁定错误。
+        
         Returns:
             SQLite连接对象
         """
         if self._connection is None:
-            self._connection = sqlite3.connect(self.db_path)
+            self._connection = sqlite3.connect(
+                self.db_path, 
+                timeout=self.timeout,
+                check_same_thread=False
+            )
             self._connection.row_factory = sqlite3.Row
+            # 启用WAL模式，提高并发读写性能
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            # 设置busy_timeout（毫秒）
+            self._connection.execute(f"PRAGMA busy_timeout={int(self.timeout * 1000)}")
         return self._connection
     
     def close(self):
@@ -49,6 +102,7 @@ class ArticleRepository:
             self._connection.close()
             self._connection = None
     
+    @retry_on_locked(max_retries=5, base_delay=0.1)
     def init_db(self):
         """
         初始化数据库表结构
@@ -134,6 +188,7 @@ class ArticleRepository:
         
         return None
     
+    @retry_on_locked(max_retries=5, base_delay=0.1)
     def save_article(self, article: dict[str, Any]) -> int:
         """
         保存文章
@@ -228,6 +283,7 @@ class ArticleRepository:
         
         return [self._row_to_dict(row) for row in rows]
     
+    @retry_on_locked(max_retries=5, base_delay=0.1)
     def mark_as_pushed(self, article_ids: list[int]):
         """
         标记文章为已推送

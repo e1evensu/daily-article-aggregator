@@ -7,11 +7,88 @@ Requirements:
     - 1.2: 使用向量数据库存储嵌入
     - 5.3: 支持配置回答风格和长度
     - 5.4: 支持设置问答频率限制
+    
+RAG Enhancement Requirements:
+    - 1.1, 1.5: 相似度阈值配置和验证
+    - 2.1, 2.5: 每文档最大分块数配置和验证
+    - 3.3: 最大历史对话轮数配置
 """
 
 from dataclasses import dataclass, field
 from typing import Any
 import os
+
+
+@dataclass
+class RetrievalConfig:
+    """
+    RAG 检索配置
+    
+    用于配置 RAG 检索增强功能的参数，包括相似度阈值、每文档分块限制、
+    历史对话轮数和去重阈值。
+    
+    Attributes:
+        similarity_threshold: 相似度阈值 [0, 1]，低于此阈值的结果将被过滤
+        max_chunks_per_doc: 每文档最大分块数，0 表示无限制
+        max_history_turns: 最大历史对话轮数
+        dedup_threshold: 去重相似度阈值，高于此阈值的内容将被去重
+    
+    Requirements:
+        - 1.1, 1.5: 相似度阈值配置和验证
+        - 2.1, 2.5: 每文档最大分块数配置和验证
+        - 3.3: 最大历史对话轮数配置
+    """
+    similarity_threshold: float = 0.5  # 相似度阈值 [0, 1]
+    max_chunks_per_doc: int = 3        # 每文档最大分块数，0 表示无限制
+    max_history_turns: int = 5         # 最大历史对话轮数
+    dedup_threshold: float = 0.95      # 去重相似度阈值
+    
+    def validate(self) -> None:
+        """
+        验证配置参数
+        
+        Raises:
+            ValueError: 当参数值不在有效范围内时
+            
+        Requirements:
+            - 1.5: similarity_threshold 必须在 [0, 1] 范围内
+            - 2.5: max_chunks_per_doc 必须 >= 0
+        """
+        if not 0 <= self.similarity_threshold <= 1:
+            raise ValueError(
+                f"similarity_threshold must be in [0, 1], got {self.similarity_threshold}"
+            )
+        if self.max_chunks_per_doc < 0:
+            raise ValueError(
+                f"max_chunks_per_doc must be >= 0, got {self.max_chunks_per_doc}"
+            )
+        if self.max_history_turns < 0:
+            raise ValueError(
+                f"max_history_turns must be >= 0, got {self.max_history_turns}"
+            )
+        if not 0 <= self.dedup_threshold <= 1:
+            raise ValueError(
+                f"dedup_threshold must be in [0, 1], got {self.dedup_threshold}"
+            )
+    
+    def to_dict(self) -> dict[str, Any]:
+        """转换为字典"""
+        return {
+            "similarity_threshold": self.similarity_threshold,
+            "max_chunks_per_doc": self.max_chunks_per_doc,
+            "max_history_turns": self.max_history_turns,
+            "dedup_threshold": self.dedup_threshold,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RetrievalConfig":
+        """从字典创建配置"""
+        return cls(
+            similarity_threshold=data.get("similarity_threshold", 0.5),
+            max_chunks_per_doc=data.get("max_chunks_per_doc", 3),
+            max_history_turns=data.get("max_history_turns", 5),
+            dedup_threshold=data.get("dedup_threshold", 0.95),
+        )
 
 
 @dataclass
@@ -303,3 +380,44 @@ def load_qa_config(config_dict: dict[str, Any] | None = None) -> QAConfig:
         config_dict = config_dict["knowledge_qa"]
     
     return QAConfig.from_dict(config_dict)
+
+
+def load_retrieval_config(
+    config_dict: dict[str, Any] | None = None,
+    validate: bool = True
+) -> RetrievalConfig:
+    """
+    加载 RAG 检索增强配置
+    
+    Args:
+        config_dict: 配置字典，如果为 None 则返回默认配置
+        validate: 是否验证配置参数，默认为 True
+        
+    Returns:
+        RetrievalConfig 配置对象
+        
+    Raises:
+        ValueError: 当 validate=True 且配置参数无效时
+    
+    Example:
+        >>> config = load_retrieval_config({"similarity_threshold": 0.7})
+        >>> config.similarity_threshold
+        0.7
+        >>> config.max_chunks_per_doc
+        3
+    
+    Requirements: 1.1, 1.5, 2.1, 2.5, 3.3
+    """
+    if config_dict is None:
+        config = RetrievalConfig()
+    else:
+        # 如果配置字典中有 rag_enhancement 键，则使用该键下的配置
+        if "rag_enhancement" in config_dict:
+            config_dict = config_dict["rag_enhancement"]
+        
+        config = RetrievalConfig.from_dict(config_dict)
+    
+    if validate:
+        config.validate()
+    
+    return config

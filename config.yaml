@@ -152,6 +152,11 @@ data_sources:
   anthropic_red:
     enabled: true
     timeout: 30
+  
+  atum_blog:
+    enabled: true
+    timeout: 30
+    days_back: 365  # 抓取最近一年的文章
 
 # 漏洞过滤配置
 # Vulnerability Filter Configuration
@@ -255,3 +260,92 @@ topic_aggregation:
     - openai.com
     - anthropic.com
     - deepmind.com
+
+# RAG 增强配置
+# RAG Enhancement Configuration
+# Requirements: 1.1, 1.5, 2.1, 2.5, 3.3
+rag_enhancement:
+  enabled: true                     # 启用 RAG 增强功能
+  similarity_threshold: 0.5         # 相似度阈值 [0, 1]，低于此阈值的结果将被过滤
+  max_chunks_per_doc: 3             # 每文档最大分块数，0 表示无限制
+  max_history_turns: 5              # 最大历史对话轮数
+  dedup_threshold: 0.95             # 去重相似度阈值，高于此阈值的内容将被去重
+
+# 飞书双向交互配置
+# Feishu Interactive Bot Configuration
+# Requirements: 14.x, 15.x, 16.x, 17.x
+feishu_interactive:
+  enabled: true                     # 启用飞书双向交互
+  app_id: "${FEISHU_APP_ID}"        # 飞书应用 ID
+  app_secret: "${FEISHU_APP_SECRET}" # 飞书应用密钥
+  # 事件服务器配置
+  event_server:
+    host: "0.0.0.0"
+    port: 8080
+    verification_token: "${FEISHU_VERIFICATION_TOKEN}"
+    encrypt_key: "${FEISHU_ENCRYPT_KEY:}"
+  # 消息处理配置
+  message_handling:
+    always_respond: false           # 是否总是响应（不需要 @mention）
+    thread_replies: true            # 是否使用线程回复
+    low_confidence_threshold: 0.5   # 低置信度阈值
+    low_confidence_message: "⚠️ 以下回答置信度较低，仅供参考："
+    max_sources: 5                  # 最大显示来源数
+  # 事件去重配置
+  deduplication:
+    max_size: 10000                 # 最大缓存大小
+    ttl_seconds: 300                # 事件 ID 过期时间（秒）
+
+# 统计分析系统配置
+# Statistics Analysis System Configuration
+# Requirements: 9.x, 10.x, 11.x, 12.x, 13.x
+stats_system:
+  enabled: true                     # 启用统计分析系统
+  db_path: "data/stats.db"          # 统计数据库路径
+  # 页面浏览统计配置
+  page_views:
+    dedup_window_seconds: 300       # 去重时间窗口（秒），同一用户同一文章在此时间内只计一次
+  # 问答统计配置
+  qa_stats:
+    track_queries: true             # 是否记录查询内容
+    track_sources: true             # 是否记录来源使用情况
+  # 来源质量评估配置
+  source_quality:
+    min_fetch_count: 10             # 最小抓取次数（低于此值不计算质量分）
+    low_quality_threshold: 30       # 低质量阈值（低于此分数标记为低质量）
+  # 话题追踪配置
+  topic_tracking:
+    enabled: true                   # 启用话题追踪
+    min_keyword_length: 2           # 最小关键词长度
+    max_keywords_per_article: 10    # 每篇文章最大关键词数
+    spike_threshold: 2.0            # 话题突增检测阈值（倍数）
+    use_jieba: true                 # 使用 jieba 分词（中文）
+  # API 配置
+  api:
+    cache_ttl_seconds: 300          # 缓存 TTL（秒）
+    max_results: 100                # 最大返回结果数
+
+# Sitemap 导入器配置
+# Sitemap Importer Configuration
+# Requirements: 5.1, 6.1, 7.1, 8.1
+sitemap_importer:
+  enabled: true                     # 启用 Sitemap 导入器
+  timeout: 30                       # HTTP 请求超时时间（秒）
+  user_agent: "PandaWiki-SitemapImporter/1.0"  # User-Agent
+  max_concurrent: 5                 # 最大并发请求数
+  delay_between_requests: 0.5       # 请求间延迟（秒）
+  state_dir: "data/sitemap_state"   # 爬取状态存储目录
+  source_type: "sitemap"            # 来源类型标识
+  # 示例 Sitemap 配置
+  # Example Sitemap configurations
+  sitemaps: []
+    # - url: "https://example.com/sitemap.xml"
+    #   include_patterns:
+    #     - "/docs/*"
+    #     - "/blog/*"
+    #   exclude_patterns:
+    #     - "*/archive/*"
+    #     - "*/tag/*"
+    #   use_regex: false
+    #   category: "documentation"
+    #   force_refresh: false

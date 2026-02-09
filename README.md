@@ -103,8 +103,39 @@
 | 上下文记忆 | 多轮对话上下文保持 | `knowledge_qa.context_manager` |
 | 频率限制 | 用户级/全局级限流 | `knowledge_qa.rate_limiter` |
 | 来源归属 | 回答附带文章来源链接 | 自动 |
+| **RAG 增强** | 相似度阈值过滤、每文档分块限制、历史对话支持、结果去重 | `rag_enhancement.*` |
 
-### 11. 工具脚本
+### 11. Sitemap 导入器
+
+| 功能 | 说明 | 配置项 |
+|------|------|--------|
+| Sitemap 解析 | 支持标准 sitemap 和 sitemap index | `sitemap_importer.enabled` |
+| 增量爬取 | 基于 lastmod 和 content hash 检测变更 | `sitemap_importer.state_dir` |
+| HTML 转 Markdown | 保留标题、列表、表格、代码块 | 自动 |
+| 抓取规则 | 支持 glob 和 regex 模式的 include/exclude | `sitemap_importer.sitemaps[].include_patterns` |
+| 并发控制 | 可配置并发数和请求延迟 | `sitemap_importer.max_concurrent` |
+
+### 12. 统计分析系统
+
+| 功能 | 说明 | 配置项 |
+|------|------|--------|
+| 页面浏览统计 | 记录文章浏览，支持去重 | `stats_system.page_views` |
+| 问答统计 | 记录查询、响应时间、来源使用 | `stats_system.qa_stats` |
+| 来源质量评估 | 计算响应率、可靠性分数 | `stats_system.source_quality` |
+| 话题追踪 | 关键词提取、趋势分析、突增检测 | `stats_system.topic_tracking` |
+| 统计 API | JSON 端点、CSV 导出、缓存 | `stats_system.api` |
+
+### 13. 飞书双向交互
+
+| 功能 | 说明 | 配置项 |
+|------|------|--------|
+| 事件订阅 | URL 验证、签名验证、幂等性处理 | `feishu_interactive.event_server` |
+| @mention 检测 | 支持多种 @mention 格式 | `feishu_interactive.message_handling` |
+| 线程回复 | 在消息线程中回复 | `feishu_interactive.message_handling.thread_replies` |
+| 低置信度提示 | 置信度低时显示提示 | `feishu_interactive.message_handling.low_confidence_threshold` |
+| always_respond 模式 | 群聊中不需要 @mention 也响应 | `feishu_interactive.message_handling.always_respond` |
+
+### 14. 工具脚本
 
 | 脚本 | 功能 |
 |------|------|
@@ -314,7 +345,8 @@ src/
 │   ├── kev_fetcher.py
 │   ├── huggingface_fetcher.py
 │   ├── pwc_fetcher.py
-│   └── blog_fetcher.py
+│   ├── blog_fetcher.py
+│   └── sitemap_importer.py      # Sitemap 导入器
 ├── analyzers/
 │   └── ai_analyzer.py     # AI 摘要/分类/翻译/漏洞评估/优先级评分
 ├── filters/
@@ -325,7 +357,9 @@ src/
 │   └── tiered_pusher.py         # 分级推送
 ├── bots/
 │   ├── feishu_bot.py            # 飞书机器人
-│   └── feishu_bitable.py        # 飞书多维表格
+│   ├── feishu_bitable.py        # 飞书多维表格
+│   ├── feishu_event_handler.py  # 飞书事件处理器
+│   └── thread_replier.py        # 线程回复器
 ├── aggregation/                  # 话题聚合
 │   ├── aggregation_engine.py    # AI Embedding 聚类
 │   ├── synthesis_generator.py   # 综述生成
@@ -342,8 +376,17 @@ src/
 │   ├── qa_engine.py             # RAG 问答引擎
 │   ├── rate_limiter.py          # 频率限制
 │   ├── event_server.py          # 飞书事件服务器
+│   ├── enhanced_retriever.py    # RAG 增强检索器
+│   ├── history_aware_query_builder.py # 历史感知查询构建
 │   ├── config.py                # QA 配置
 │   └── models.py                # QA 数据模型
+├── stats/                        # 统计分析系统
+│   ├── models.py                # 统计数据模型
+│   ├── store.py                 # SQLite 存储
+│   ├── collector.py             # 统计收集器
+│   ├── aggregator.py            # 统计聚合器
+│   ├── topic_tracker.py         # 话题追踪器
+│   └── api.py                   # 统计 API
 ├── evaluators/
 │   └── rss_evaluator.py         # RSS 源质量评估
 ├── processors/

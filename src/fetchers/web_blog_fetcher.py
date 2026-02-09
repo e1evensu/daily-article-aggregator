@@ -319,3 +319,96 @@ class AnthropicRedFetcher(WebBlogFetcher):
             published_date=published_date,
             authors=['Anthropic Frontier Red Team']
         )
+
+
+
+class AtumBlogFetcher(WebBlogFetcher):
+    """Atum 博客抓取器 (atum.li)"""
+    
+    SOURCE_NAME = "Atum Blog"
+    SOURCE_TYPE = "atum_blog"
+    BASE_URL = "https://atum.li/cn/"
+    
+    MONTH_MAP = {
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+        'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+        'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+    }
+    
+    def _parse_response(self, response: requests.Response) -> list[dict[str, Any]]:
+        """解析 HTML 页面"""
+        soup = BeautifulSoup(response.text, 'html.parser')
+        articles = []
+        
+        # 查找所有文章条目 - 格式: ==> atum, Feb 6, 2026, [tags], title <==
+        for element in soup.find_all('div'):
+            text = element.get_text(strip=True)
+            
+            # 匹配文章条目格式
+            if text.startswith('==>') and text.endswith('<=='):
+                article = self._parse_article_entry(element)
+                if article:
+                    articles.append(article)
+        
+        return articles
+    
+    def _parse_article_entry(self, element) -> dict[str, Any] | None:
+        """解析单个文章条目"""
+        # 查找文章链接
+        links = element.find_all('a')
+        article_link = None
+        tags = []
+        
+        for link in links:
+            href = link.get('href', '')
+            if '/blog/' in href:
+                article_link = link
+            elif '/tag/' in href:
+                tags.append(link.get_text(strip=True))
+        
+        if not article_link:
+            return None
+        
+        href = article_link.get('href', '')
+        title = article_link.get_text(strip=True)
+        
+        if not title or not href:
+            return None
+        
+        # 构建完整 URL
+        if href.startswith('/'):
+            url = f"https://atum.li{href}"
+        else:
+            url = href
+        
+        # 解析日期 - 格式: "Feb 6, 2026" 或 "Nov 14, 2025"
+        text = element.get_text()
+        date_match = re.search(
+            r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s+(\d{4})',
+            text
+        )
+        
+        if date_match:
+            month = self.MONTH_MAP[date_match.group(1)]
+            day = date_match.group(2).zfill(2)
+            year = date_match.group(3)
+            published_date = f"{year}-{month}-{day}"
+        else:
+            published_date = datetime.now().strftime('%Y-%m-%d')
+        
+        # 获取摘要 - 下一个兄弟元素
+        summary = ""
+        next_sibling = element.find_next_sibling('div')
+        if next_sibling:
+            summary_text = next_sibling.get_text(strip=True)
+            # 确保不是另一个文章条目
+            if not summary_text.startswith('==>'):
+                summary = summary_text
+        
+        return self._build_article(
+            title=title,
+            url=url,
+            summary=summary,
+            published_date=published_date,
+            authors=['atum']
+        )

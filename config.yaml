@@ -14,7 +14,7 @@ sources:
       - safety
       - llm
     use_llm_filter: false
-    max_results: 100
+    max_results: 1000
   
   rss:
     enabled: true
@@ -28,6 +28,7 @@ sources:
       - "rss/chinese-independent-blogs.opml" # 中文独立博客
       - "rss/SecureRss.opml"               # 安全RSS（大型）
       - "rss/wechatRSS.opml"               # 微信公众号RSS
+      - "rss/hn-popular-blogs-2025.opml"   # HN热门博客2025（92个高质量技术博客）
 
 # AI配置（所有值都支持环境变量覆盖）
 ai:
@@ -35,7 +36,7 @@ ai:
   api_base: "${OPENAI_API_BASE:https://api.openai.com/v1}"
   api_key: "${OPENAI_API_KEY}"
   model: "${OPENAI_MODEL:gpt-4o-mini}"
-  max_tokens: 2000
+  max_tokens: 200000
   temperature: 0.7
   timeout: 60
   translate: true
@@ -84,7 +85,7 @@ database:
 
 # 内容处理配置
 content:
-  max_length: 500000 # 最大内容长度（字符）
+  max_length: 5000000 # 最大内容长度（字符）
   truncation_marker: "\n\n... [内容已截断]"
 
 # 新数据源配置
@@ -218,7 +219,7 @@ knowledge_qa:
     context_ttl_minutes: 30
     max_retrieved_docs: 5
     min_relevance_score: 0.5
-    answer_max_length: 4000
+    answer_max_length: 40000
   
   # 分块配置
   chunking:

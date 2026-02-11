@@ -16,6 +16,14 @@ Options:
 Requirements: 1.2, 1.3
 """
 
+# SQLite 版本兼容性补丁 - ChromaDB 需要 SQLite >= 3.35.0
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+
 import argparse
 import logging
 import sys

@@ -18,8 +18,8 @@ sources:
   
   rss:
     enabled: true
-    # 可选择使用单个OPML或多个OPML文件
-    opml_path: "feeds.opml"
+    # 使用合并后的OPML文件（包含所有评估通过的订阅源）
+    opml_path: "merged_feeds.opml"
     # 额外的OPML文件列表（用于评估）
     opml_files:
       - "rss/CyberSecurityRSS.opml"        # 网络安全RSS（完整版）

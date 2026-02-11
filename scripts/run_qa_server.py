@@ -54,6 +54,7 @@ from src.qa.config import (
 )
 from src.bots.feishu_bot import FeishuAppBot
 from src.analyzers.ai_analyzer import AIAnalyzer
+from src.feedback.feedback_handler import FeedbackHandler
 
 # 配置日志
 logging.basicConfig(
@@ -207,6 +208,12 @@ def run_server(
         feishu_bot=feishu_bot,
         rate_limiter=components["rate_limiter"]
     )
+    
+    # 设置反馈处理器
+    logger.info("初始化反馈处理器...")
+    db_path = config.get("database", {}).get("path", "data/articles.db")
+    feedback_handler = FeedbackHandler(db_path=db_path)
+    server.set_feedback_handler(feedback_handler)
     
     # 打印服务器信息
     logger.info("=" * 60)

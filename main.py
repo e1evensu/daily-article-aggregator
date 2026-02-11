@@ -3,6 +3,14 @@
 每日文章聚合器 - 主程序入口
 Daily Article Aggregator - Main Entry Point
 
+# SQLite 版本兼容性补丁 - ChromaDB 需要 SQLite >= 3.35.0
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass
+
 支持三种运行模式：
 1. 定时调度模式（默认）：每天在配置的时间自动执行任务
 2. 单次执行模式（--once）：立即执行一次任务后退出

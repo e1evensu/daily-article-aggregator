@@ -1,4 +1,4 @@
-zai#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 OPML 文件合并去重脚本
 Merge and deduplicate multiple OPML files

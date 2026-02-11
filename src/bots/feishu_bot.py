@@ -292,13 +292,14 @@ class FeishuBot:
         
         return content
     
-    def push_articles(self, articles: list[dict], batch_size: int = 10) -> bool:
+    def push_articles(self, articles: list[dict], batch_size: int = 10, with_feedback: bool = True) -> bool:
         """
-        推送文章到飞书（支持分批推送）
+        推送文章到飞书（支持分批推送，带反馈按钮）
         
         Args:
             articles: 文章列表，每篇文章应包含title和url字段
             batch_size: 每批推送的文章数量，默认10篇
+            with_feedback: 是否添加反馈按钮，默认True
             
         Returns:
             是否全部推送成功
@@ -307,6 +308,7 @@ class FeishuBot:
             - 空列表会返回True（无需推送）
             - 文章数量超过 batch_size 时会分批推送
             - 每批之间间隔1秒，避免触发频率限制
+            - with_feedback=True时使用交互式卡片，每篇文章带反馈按钮
         """
         if not articles:
             logger.info("没有文章需要推送")
@@ -335,12 +337,18 @@ class FeishuBot:
             batch_start = i + 1
             batch_end = min(i + batch_size, total_count)
             
-            # 构建富文本内容
-            title = f"📚 今日文章推荐 ({batch_start}-{batch_end}/{total_count}篇)"
-            content = self._build_rich_text_content_simple(batch)
-            
-            logger.info(f"推送第 {batch_num} 批: {len(batch)} 篇文章")
-            success = self.send_rich_text(title, content)
+            if with_feedback:
+                # 使用交互式卡片，带反馈按钮
+                title = f"📚 今日文章推荐 ({batch_start}-{batch_end}/{total_count}篇)"
+                card = self._build_articles_card_with_feedback(batch, title)
+                logger.info(f"推送第 {batch_num} 批: {len(batch)} 篇文章（带反馈按钮）")
+                success = self.send_interactive_card(card)
+            else:
+                # 使用富文本格式（无反馈按钮）
+                title = f"📚 今日文章推荐 ({batch_start}-{batch_end}/{total_count}篇)"
+                content = self._build_rich_text_content_simple(batch)
+                logger.info(f"推送第 {batch_num} 批: {len(batch)} 篇文章")
+                success = self.send_rich_text(title, content)
             
             if not success:
                 logger.error(f"第 {batch_num} 批推送失败")
@@ -356,6 +364,138 @@ class FeishuBot:
             logger.warning(f"部分批次推送失败，请检查日志")
         
         return all_success
+    
+    def send_interactive_card(self, card: dict) -> bool:
+        """
+        发送交互式卡片消息
+        
+        Args:
+            card: 飞书卡片 JSON 结构
+            
+        Returns:
+            是否发送成功
+        """
+        if not card:
+            logger.warning("尝试发送空卡片")
+            return False
+        
+        payload = {
+            "msg_type": "interactive",
+            "card": card
+        }
+        
+        logger.debug("发送交互式卡片消息")
+        return self._send_request(payload)
+    
+    def _build_articles_card_with_feedback(self, articles: list[dict], title: str) -> dict:
+        """
+        构建带反馈按钮的文章卡片
+        
+        Args:
+            articles: 文章列表
+            title: 卡片标题
+            
+        Returns:
+            飞书卡片 JSON
+        """
+        elements = []
+        
+        for i, article in enumerate(articles, 1):
+            article_title = article.get('title', '').strip()
+            url = article.get('url', '').strip()
+            article_id = article.get('id', url)  # 用URL作为备用ID
+            
+            if not article_title or not url:
+                continue
+            
+            # 截断过长的标题
+            if len(article_title) > 60:
+                article_title = article_title[:57] + "..."
+            
+            # 文章标题（带链接）
+            elements.append({
+                "tag": "markdown",
+                "content": f"**{i}. [{article_title}]({url})**"
+            })
+            
+            # 摘要
+            zh_summary = article.get('zh_summary', '').strip()
+            summary = article.get('summary', '').strip()
+            short_desc = article.get('short_description', '').strip()
+            display_summary = zh_summary or summary or short_desc
+            
+            if display_summary:
+                if len(display_summary) > 120:
+                    display_summary = display_summary[:117] + "..."
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"📝 {display_summary}"
+                })
+            
+            # 分类和来源
+            category = article.get('category', '').strip()
+            source = article.get('source', '').strip()
+            source_type = article.get('source_type', '').strip()
+            
+            info_parts = []
+            if category:
+                info_parts.append(f"[{category}]")
+            if source_type:
+                info_parts.append(source_type.upper())
+            elif source:
+                if len(source) > 20:
+                    source = source[:17] + "..."
+                info_parts.append(source)
+            
+            if info_parts:
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"🏷️ {' '.join(info_parts)}"
+                })
+            
+            # 反馈按钮行
+            elements.append({
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "👍 有用"},
+                        "type": "primary",
+                        "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "👎 没用"},
+                        "type": "default",
+                        "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⭐ 收藏"},
+                        "type": "default",
+                        "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🔍 更多"},
+                        "type": "default",
+                        "value": {"action": "feedback", "rating": "more", "article_id": article_id}
+                    }
+                ]
+            })
+            
+            # 分隔线（除了最后一篇）
+            if i < len(articles):
+                elements.append({"tag": "hr"})
+        
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": title},
+                "template": "blue"
+            },
+            "elements": elements
+        }
     
     def _build_rich_text_content_simple(self, articles: list[dict]) -> list:
         """

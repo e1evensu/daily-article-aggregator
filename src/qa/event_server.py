@@ -228,6 +228,9 @@ class FeishuEventServer:
         self._feishu_bot: "FeishuAppBot | None" = feishu_bot
         self._rate_limiter: "RateLimiter | None" = rate_limiter
         
+        # 反馈处理器（可选）
+        self._feedback_handler = None
+        
         # 事件去重器 (Requirement 17.4)
         self._deduplicator = EventDeduplicator()
         
@@ -534,9 +537,122 @@ class FeishuEventServer:
         if event_type in ["im.message.receive_v1", "message"]:
             return self._handle_message_event(data)
         
+        # 处理卡片回调事件（反馈按钮点击）
+        if event_type in ["card.action.trigger", "interactive"]:
+            return self._handle_card_action(data)
+        
         # 未知事件类型
         logger.debug(f"Unhandled event type: {event_type}")
         return {"code": 0, "msg": "ok"}, 200
+    
+    def _handle_card_action(self, data: dict) -> tuple[dict, int]:
+        """
+        处理卡片回调事件（反馈按钮点击）
+        
+        当用户点击文章推送卡片上的反馈按钮时，飞书会发送此事件。
+        
+        Args:
+            data: 卡片回调事件数据
+        
+        Returns:
+            响应数据和 HTTP 状态码的元组
+        """
+        try:
+            event = data.get("event", data)
+            action = event.get("action", {})
+            value = action.get("value", {})
+            
+            # 检查是否是反馈动作
+            if value.get("action") != "feedback":
+                logger.debug(f"Non-feedback card action: {value}")
+                return {"code": 0, "msg": "ok"}, 200
+            
+            rating = value.get("rating", "")
+            article_id = value.get("article_id", "")
+            
+            # 获取用户信息
+            operator = event.get("operator", {})
+            user_id = operator.get("open_id", "")
+            
+            logger.info(
+                f"Received feedback: user={user_id[:8] if user_id else 'unknown'}..., "
+                f"article={article_id[:30] if article_id else 'unknown'}..., "
+                f"rating={rating}"
+            )
+            
+            # 在后台线程中处理反馈
+            if self._feedback_handler and rating and article_id:
+                threading.Thread(
+                    target=self._process_feedback,
+                    args=(user_id, article_id, rating),
+                    daemon=True
+                ).start()
+            
+            # 返回卡片更新（显示感谢信息）
+            response_text = self._get_feedback_response_text(rating)
+            return {
+                "toast": {"type": "success", "content": response_text}
+            }, 200
+            
+        except Exception as e:
+            logger.error(f"Error handling card action: {e}", exc_info=True)
+            return {"code": 0, "msg": "ok"}, 200
+    
+    def _process_feedback(self, user_id: str, article_id: str, rating: str) -> None:
+        """
+        处理反馈（后台线程）
+        
+        Args:
+            user_id: 用户 ID
+            article_id: 文章 ID
+            rating: 评分类型（useful/not_useful/bookmark/more）
+        """
+        try:
+            from src.feedback.models import QuickRating
+            
+            rating_map = {
+                'useful': QuickRating.USEFUL,
+                'not_useful': QuickRating.NOT_USEFUL,
+                'bookmark': QuickRating.BOOKMARK,
+                'more': QuickRating.MORE_LIKE_THIS,
+            }
+            
+            quick_rating = rating_map.get(rating)
+            if not quick_rating:
+                logger.warning(f"Unknown rating type: {rating}")
+                return
+            
+            self._feedback_handler.record_quick_feedback(
+                article_id=article_id,
+                user_id=user_id,
+                rating=quick_rating,
+                article_info={"id": article_id}
+            )
+            
+            logger.info(f"Feedback recorded: user={user_id[:8]}..., rating={rating}")
+            
+        except Exception as e:
+            logger.error(f"Error processing feedback: {e}", exc_info=True)
+    
+    def _get_feedback_response_text(self, rating: str) -> str:
+        """获取反馈响应文本"""
+        responses = {
+            'useful': "✅ 感谢反馈！会推荐更多类似内容",
+            'not_useful': "📝 收到反馈，会减少类似推荐",
+            'bookmark': "⭐ 已收藏！",
+            'more': "🔍 会寻找更多类似内容",
+        }
+        return responses.get(rating, "感谢反馈！")
+    
+    def set_feedback_handler(self, handler) -> None:
+        """
+        设置反馈处理器
+        
+        Args:
+            handler: FeedbackHandler 实例
+        """
+        self._feedback_handler = handler
+        logger.info("Feedback handler set")
     
     def _handle_message_event(self, data: dict) -> tuple[dict, int]:
         """

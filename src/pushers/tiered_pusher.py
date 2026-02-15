@@ -368,13 +368,20 @@ class TieredPusher:
                 title = article.get('title', 'Untitled')
                 url = article.get('url', '')
                 source_type = article.get('source_type', '')
-                
+
                 prefix = f"[{source_type.upper()}] " if source_type else ""
                 content.append([
                     {"tag": "text", "text": f"- {prefix}"},
                     {"tag": "a", "text": title, "href": url} if url else {"tag": "text", "text": title}
                 ])
-        
+
+        # 添加反馈提示
+        content.append([{"tag": "text", "text": ""}])
+        content.append([{"tag": "text", "text": "💡 反馈命令："}])
+        content.append([{"tag": "text", "text": "• \"有用\" / \"没用\" - 快速反馈"}])
+        content.append([{"tag": "text", "text": "• \"收藏\" - 收藏此文章"}])
+        content.append([{"tag": "text", "text": "• \"更多类似\" - 推荐更多同类文章"}])
+
         return content
 
     def push_articles(self, articles: list[dict[str, Any]]) -> bool:

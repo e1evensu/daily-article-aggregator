@@ -297,7 +297,28 @@ class Scheduler:
                     logger.info("FeishuBitable initialized")
                 except Exception as e:
                     logger.warning(f"Failed to initialize FeishuBitable: {e}")
-        
+
+        # 用户反馈系统
+        feedback_config = self.config.get('feedback', {})
+        if feedback_config.get('enabled', False):
+            try:
+                from src.feedback.feedback_handler import FeedbackHandler
+                db_path = feedback_config.get('db_path', 'data/articles.db')
+                components['feedback_handler'] = FeedbackHandler(db_path)
+                logger.info("FeedbackHandler initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize FeedbackHandler: {e}")
+
+        # PDF翻译服务
+        pdf_translation_config = self.config.get('pdf_translation', {})
+        if pdf_translation_config.get('enabled', False):
+            try:
+                from src.bots.feishu_pdf_translator import FeishuPDFTranslationService
+                components['pdf_translation_service'] = FeishuPDFTranslationService(pdf_translation_config)
+                logger.info("FeishuPDFTranslationService initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize PDF translation service: {e}")
+
         return components
     
     def _cleanup_components(self, components: dict[str, Any]):

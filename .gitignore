@@ -45,6 +45,7 @@ data/*.db
 data/*.sqlite
 data/*.sqlite3
 data/chroma/
+data/chroma_db/
 data/checkpoints/
 data/doc_backups/
 

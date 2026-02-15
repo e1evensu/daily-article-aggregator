@@ -325,6 +325,42 @@ stats_system:
     cache_ttl_seconds: 300          # 缓存 TTL（秒）
     max_results: 100                # 最大返回结果数
 
+# 用户反馈配置
+# User Feedback Configuration
+feedback:
+  enabled: true                      # 启用用户反馈
+  db_path: "data/articles.db"        # 反馈数据库路径
+  # 反馈提示消息
+  prompt_message: |
+    💡 反馈命令：
+    • "有用" / "没用" - 快速反馈
+    • "收藏" - 收藏此文章
+    • "更多类似" - 推荐更多同类文章
+
+# PDF翻译服务配置
+# PDF Translation Service Configuration
+pdf_translation:
+  enabled: true                      # 启用PDF翻译服务
+  input_dir: "data/papers/input"     # PDF输入目录
+  output_dir: "data/papers/output"   # 翻译输出目录
+  # DeepSeek API配置
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY:}"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+  # SiliconFlow API配置（用于图表理解）
+  siliconflow:
+    api_key: "${SILICONFLOW_API_KEY:}"
+    base_url: "https://api.siliconflow.cn/v1"
+  # 飞书配置
+  feishu:
+    # 翻译完成后是否发送通知
+    notify_on_complete: true
+    # 是否发送到群聊
+    send_to_group: true
+  # 翻译风格
+  translation_style: "academic"       # academic(学术) / casual(通俗)
+
 # Sitemap 导入器配置
 # Sitemap Importer Configuration
 # Requirements: 5.1, 6.1, 7.1, 8.1

@@ -135,12 +135,10 @@ class TopicAggregationSystem:
         
         # 步骤 1: 质量过滤
         logger.info("步骤 1: 质量过滤")
-        filter_results = self.quality_filter.filter_articles(articles)
-        result['filter_results'] = filter_results
-        
-        passed_articles = [
-            fr.article for fr in filter_results if fr.passed
-        ]
+        filter_result = self.quality_filter.filter_articles(articles)
+        result['filter_results'] = filter_result
+
+        passed_articles = filter_result.passed
         result['stats']['filtered_articles'] = len(articles) - len(passed_articles)
         result['stats']['passed_articles'] = len(passed_articles)
         

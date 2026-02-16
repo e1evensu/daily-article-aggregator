@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from paper_translator.models import Formula, Figure, TextBlock
+from .models import Formula, Figure, TextBlock
 
 logger = logging.getLogger(__name__)
 

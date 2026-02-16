@@ -15,8 +15,8 @@ import urllib.request
 
 import requests
 
-from paper_translator.processor import PaperTranslator
-from paper_translator.config import config as pdf_config
+from src.paper_translator.paper_translator.processor import PaperTranslator
+from src.paper_translator.paper_translator.config import config as pdf_config
 
 logger = logging.getLogger(__name__)
 

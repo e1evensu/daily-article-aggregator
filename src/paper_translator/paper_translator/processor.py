@@ -8,15 +8,15 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from paper_translator.config import config
-from paper_translator.models import (
+from .config import config
+from .models import (
     PaperTranslationResult, ProcessedPage, Term,
     TextBlock
 )
-from paper_translator.pdf_parser import PDFParser
-from paper_translator.translation_engine import TranslationEngine
-from paper_translator.figure_understanding import FigureUnderstanding
-from paper_translator.pdf_generator import PDFGenerator
+from .pdf_parser import PDFParser
+from .translation_engine import TranslationEngine
+from .figure_understanding import FigureUnderstanding
+from .pdf_generator import PDFGenerator
 
 logger = logging.getLogger(__name__)
 

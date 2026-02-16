@@ -27,7 +27,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.fonts import addMapping
 
-from paper_translator.models import (
+from .models import (
     ProcessedPage, PaperTranslationResult, Term
 )
 

@@ -7,8 +7,8 @@ from typing import Optional
 
 import openai
 
-from paper_translator.config import config
-from paper_translator.models import Term
+from .config import config
+from .models import Term
 
 logger = logging.getLogger(__name__)
 

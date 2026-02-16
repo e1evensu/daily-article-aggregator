@@ -21,6 +21,7 @@ Requirements:
 import json
 import logging
 import re
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -594,3 +595,556 @@ class FeishuDocPublisher:
             error_message=f"发布失败，已保存本地备份: {backup_path}",
             published_at=datetime.now()
         )
+
+    # ==================== 日报相关常量和辅助方法 ====================
+
+    # 分类关键词映射
+    CATEGORY_KEYWORDS = {
+        "AI/ML": ["ai", "artificial intelligence", "machine learning", "llm", "deep learning",
+                  "神经网络", "机器学习", "深度学习", "大语言模型", "gpt", "chatgpt", "claude",
+                  "transformer", "langchain", "aigc", "生成式ai", "人工智能"],
+        "安全": ["security", "privacy", "vulnerability", "encryption", "hack", "attack",
+                "安全", "隐私", "漏洞", "加密", "黑客", "威胁", "cve", "渗透", "恶意软件"],
+        "工程": ["software engineering", "architecture", "programming", "system design",
+                "软件工程", "架构", "编程", "系统设计", "开发", "代码", "algorithm",
+                "database", "distributed", "微服务", "kubernetes", "devops", "云原生"],
+        "工具/开源": ["tool", "open source", "framework", "library", "开发工具", "开源",
+                    "github", "vscode", " IDE", "terminal", "效率", " productivity"],
+        "观点/杂谈": ["opinion", "perspective", "thought", "analysis", "趋势", "观察",
+                    "行业", "观点", "思考", "评论", "review", "展望", "未来"],
+    }
+
+    # 分类显示名称
+    CATEGORY_NAMES = {
+        "AI/ML": "AI/ML",
+        "安全": "安全",
+        "工程": "工程",
+        "工具/开源": "工具/开源",
+        "观点/杂谈": "观点/杂谈",
+        "其他": "其他",
+    }
+
+    def _classify_article(self, article: dict | Any) -> str:
+        """
+        根据文章内容分类
+
+        Args:
+            article: 文章对象（dict 或 Article）
+
+        Returns:
+            分类名称
+        """
+        # 获取文章标题和摘要
+        if hasattr(article, 'title'):
+            title = article.title.lower()
+            summary = getattr(article, 'summary', '') or ''
+            if hasattr(summary, 'lower'):
+                summary = summary.lower()
+        else:
+            title = str(article.get('title', '')).lower()
+            summary = str(article.get('summary', '')).lower()
+
+        text = f"{title} {summary}".lower()
+
+        # 匹配分类
+        for category, keywords in self.CATEGORY_KEYWORDS.items():
+            for keyword in keywords:
+                if keyword.lower() in text:
+                    return category
+
+        return "其他"
+
+    def _get_all_keywords(self, articles: list) -> list[str]:
+        """从所有文章中提取关键词"""
+        all_keywords = []
+        for article in articles:
+            if hasattr(article, 'keywords'):
+                kw_list = article.keywords
+            else:
+                kw_list = article.get('keywords', [])
+            all_keywords.extend(kw_list)
+        return all_keywords
+
+    def _generate_trend_summary(self, articles: list, categories: dict) -> str:
+        """
+        生成宏观趋势总结
+
+        Args:
+            articles: 文章列表
+            categories: 分类统计
+
+        Returns:
+            3-5句话的趋势总结
+        """
+        total = len(articles)
+        category_counts = {cat: len(arts) for cat, arts in categories.items()}
+
+        # 获取最热门的分类
+        top_cats = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
+
+        sentences = []
+
+        # 基础统计
+        sentences.append(f"今日共收录 {total} 篇优质技术文章，涵盖六大领域。")
+
+        # 热门分类
+        if top_cats:
+            top_cat_name = self.CATEGORY_NAMES.get(top_cats[0][0], top_cats[0][0])
+            sentences.append(f"{top_cat_name} 领域持续火热，占据今日文章的 {top_cats[0][1] * 100 // total}%。")
+
+        # 趋势洞察
+        if "AI/ML" in category_counts and category_counts["AI/ML"] > 0:
+            sentences.append("AI 领域继续保持高速发展态势，多项重磅研究和应用值得关注。")
+
+        # 安全态势
+        if "安全" in category_counts and category_counts["安全"] > 0:
+            sentences.append(f"安全领域有 {category_counts['安全']} 篇新文章，安全威胁形势依然严峻。")
+
+        # 工程实践
+        if "工程" in category_counts and category_counts["工程"] > 0:
+            sentences.append("工程实践类文章丰富，软件架构和系统设计仍是业界关注焦点。")
+
+        return " ".join(sentences[:5])  # 最多5句
+
+    def _generate_ascii_pie_chart(self, data: dict[str, int], width: int = 40) -> str:
+        """
+        生成 ASCII 饼图
+
+        Args:
+            data: 数据字典 {label: count}
+            width: 图表宽度
+
+        Returns:
+            ASCII 饼图字符串
+        """
+        total = sum(data.values())
+        if total == 0:
+            return "No data"
+
+        # 按值排序
+        sorted_data = sorted(data.items(), key=lambda x: x[1], reverse=True)
+
+        # 饼图字符
+        chars = ['█', '▓', '▒', '░', '◙', '◘', '◧', '◨', '◫', '◱']
+
+        lines = []
+        lines.append("  饼图分布 (Pie Chart)")
+        lines.append("  " + "─" * (width - 4))
+
+        current = 0
+        max_label_len = max(len(str(k)) for k in data.keys()) if data else 0
+
+        for i, (label, value) in enumerate(sorted_data):
+            percentage = value / total
+            bar_len = int(percentage * (width - max_label_len - 15))
+            bar = chars[i % len(chars)] * bar_len
+            pct_str = f"{percentage * 100:.1f}%"
+            lines.append(f"  {label:<{max_label_len}} │ {bar} {pct_str}")
+
+        lines.append("  " + "─" * (width - 4))
+        return "\n".join(lines)
+
+    def _generate_ascii_bar_chart(self, data: dict[str, int], max_width: int = 30) -> str:
+        """
+        生成 ASCII 柱状图
+
+        Args:
+            data: 数据字典 {label: count}
+            max_width: 最大条形宽度
+
+        Returns:
+            ASCII 柱状图字符串
+        """
+        if not data:
+            return "No data"
+
+        # 按值排序
+        sorted_data = sorted(data.items(), key=lambda x: x[1], reverse=True)
+        max_value = max(data.values())
+        max_label_len = max(len(str(k)) for k in data.keys())
+
+        lines = []
+        lines.append("  柱状图分布 (Bar Chart)")
+        lines.append("  " + "─" * (max_label_len + max_width + 8))
+
+        for label, value in sorted_data:
+            bar_len = int((value / max_value) * max_width) if max_value > 0 else 0
+            bar = "▓" * bar_len
+            lines.append(f"  {label:<{max_label_len}} │{bar} {value}")
+
+        lines.append("  " + "─" * (max_label_len + max_width + 8))
+        return "\n".join(lines)
+
+    def _generate_tag_cloud(self, keywords: list[str], max_tags: int = 20) -> str:
+        """
+        生成标签云
+
+        Args:
+            keywords: 关键词列表
+            max_tags: 最大标签数
+
+        Returns:
+            标签云字符串
+        """
+        if not keywords:
+            return "No keywords"
+
+        # 统计词频
+        counter = Counter(keywords)
+        top_keywords = counter.most_common(max_tags)
+
+        if not top_keywords:
+            return "No keywords"
+
+        max_count = top_keywords[0][1]
+
+        lines = []
+        lines.append("  热门标签 (Tag Cloud)")
+        lines.append("  " + "─" * 30)
+
+        # 分行显示，每行几个标签
+        current_line = "  "
+        for i, (word, count) in enumerate(top_keywords):
+            # 计算字体大小指示
+            if max_count > 0:
+                size_ratio = count / max_count
+                if size_ratio > 0.8:
+                    indicator = "●●●"
+                elif size_ratio > 0.5:
+                    indicator = "●●○"
+                elif size_ratio > 0.3:
+                    indicator = "●○○"
+                else:
+                    indicator = "○○○"
+            else:
+                indicator = "●○○"
+
+            tag = f"{word}({indicator}{count})"
+            if len(current_line) + len(tag) + 2 > 50:
+                lines.append(current_line)
+                current_line = "  " + tag
+            else:
+                current_line += tag + "  "
+
+        if current_line.strip():
+            lines.append(current_line)
+
+        lines.append("  " + "─" * 30)
+        lines.append("  图例: ●●●高  ●●○中  ●○○低")
+        return "\n".join(lines)
+
+    def _create_table_block(self, rows: list[list[str]]) -> dict:
+        """
+        创建表格块
+
+        Args:
+            rows: 表格行列表，每行是单元格列表
+
+        Returns:
+            飞书表格块
+        """
+        if not rows:
+            return {}
+
+        # 第一行作为表头
+        header_row = rows[0]
+        cell_count = len(header_row)
+
+        # 构建表格块结构
+        table_cells = []
+        for row in rows:
+            cells = []
+            for cell in row[:cell_count]:
+                cells.append({
+                    "cell": {
+                        "elements": [self._create_text_element(str(cell))],
+                        "style": {}
+                    }
+                })
+            table_cells.append({"cells": cells})
+
+        return {
+            "block_type": 10,  # TABLE 类型
+            "table": {
+                "rows": table_cells,
+                "style": {}
+            }
+        }
+
+    def _select_top_articles(self, articles: list, top_n: int = 3) -> list:
+        """
+        选择 Top N 篇必读文章
+
+        Args:
+            articles: 文章列表
+            top_n: 选择数量
+
+        Returns:
+            选中的文章列表
+        """
+        # 简单策略：优先选择有英文标题的文章，然后按标题长度排序
+        scored_articles = []
+
+        for article in articles:
+            if hasattr(article, 'title'):
+                title = article.title
+            else:
+                title = str(article.get('title', ''))
+
+            # 评分：优先选择包含英文的文章
+            score = 0
+            if any(c.isalpha() and ord(c) < 128 for c in title):
+                score += 10
+
+            # 标题长度适中得分更高
+            if 30 <= len(title) <= 100:
+                score += 5
+
+            scored_articles.append((score, article))
+
+        # 按分数降序排序
+        scored_articles.sort(key=lambda x: x[0], reverse=True)
+
+        return [article for score, article in scored_articles[:top_n]]
+
+    def _generate_digest_blocks(self, articles: list, config: dict) -> list[dict]:
+        """
+        生成日报的所有飞书块
+
+        Args:
+            articles: 文章列表
+            config: 配置字典
+
+        Returns:
+            飞书块列表
+        """
+        blocks = []
+
+        # ========== 今日看点 ==========
+        blocks.append(self._create_heading_block("今日看点", 2))
+
+        # 按分类统计
+        categories = {cat: [] for cat in self.CATEGORY_NAMES.keys()}
+        for article in articles:
+            cat = self._classify_article(article)
+            categories[cat].append(article)
+
+        # 生成趋势总结
+        trend_summary = self._generate_trend_summary(articles, categories)
+        blocks.append(self._create_quote_block(trend_summary))
+        blocks.append(self._create_divider_block())
+
+        # ========== 今日必读 ==========
+        blocks.append(self._create_heading_block("今日必读", 2))
+
+        top_articles = self._select_top_articles(articles, 3)
+        for i, article in enumerate(top_articles, 1):
+            if hasattr(article, 'title'):
+                title = article.title
+                summary = getattr(article, 'summary', '') or ''
+                url = getattr(article, 'url', '') or ''
+                keywords = getattr(article, 'keywords', []) or []
+            else:
+                title = str(article.get('title', ''))
+                summary = str(article.get('summary', ''))
+                url = str(article.get('url', ''))
+                keywords = article.get('keywords', []) or []
+
+            # 标题
+            blocks.append(self._create_text_block(f"#{i} {title}"))
+
+            # 摘要
+            if summary:
+                blocks.append(self._create_quote_block(summary[:200] + "..." if len(summary) > 200 else summary))
+
+            # 推荐理由
+            reason = f"推荐理由: 本文探讨了核心技术趋势，具有较高的学习和参考价值。"
+            blocks.append(self._create_text_block(reason))
+
+            # 关键词
+            if keywords:
+                kw_str = "关键词: " + ", ".join(keywords[:5])
+                blocks.append(self._create_text_block(kw_str))
+
+            # 链接
+            if url:
+                blocks.append(self._create_text_block(f"阅读原文: [点击访问]({url})"))
+
+            blocks.append(self._create_divider_block())
+
+        # ========== 数据概览 ==========
+        blocks.append(self._create_heading_block("数据概览", 2))
+
+        # 统计表格
+        blocks.append(self._create_heading_block("分类统计", 3))
+        category_stats = {self.CATEGORY_NAMES.get(cat, cat): len(arts) for cat, arts in categories.items()}
+        table_rows = [["分类", "数量", "占比"]]  # 表头
+        total_articles = len(articles)
+        for cat, count in sorted(category_stats.items(), key=lambda x: x[1], reverse=True):
+            pct = f"{count * 100 // total_articles}%" if total_articles > 0 else "0%"
+            table_rows.append([cat, str(count), pct])
+
+        blocks.append(self._create_table_block(table_rows))
+        blocks.append(self._create_divider_block())
+
+        # ASCII 饼图
+        blocks.append(self._create_code_block(
+            self._generate_ascii_pie_chart(category_stats),
+            "text"
+        ))
+        blocks.append(self._create_divider_block())
+
+        # ASCII 柱状图
+        blocks.append(self._create_code_block(
+            self._generate_ascii_bar_chart(category_stats),
+            "text"
+        ))
+        blocks.append(self._create_divider_block())
+
+        # 标签云
+        all_keywords = self._get_all_keywords(articles)
+        blocks.append(self._create_code_block(
+            self._generate_tag_cloud(all_keywords),
+            "text"
+        ))
+        blocks.append(self._create_divider_block())
+
+        # ========== 分类文章列表 ==========
+        blocks.append(self._create_heading_block("分类文章列表", 2))
+
+        for cat_name, cat_key in [("AI/ML", "AI/ML"), ("安全", "安全"), ("工程", "工程"),
+                                   ("工具/开源", "工具/开源"), ("观点/杂谈", "观点/杂谈"), ("其他", "其他")]:
+            cat_articles = categories.get(cat_key, [])
+            if not cat_articles:
+                continue
+
+            blocks.append(self._create_heading_block(cat_name, 3))
+
+            for j, article in enumerate(cat_articles[:10], 1):  # 每类最多显示10篇
+                if hasattr(article, 'title'):
+                    title = article.title
+                    url = getattr(article, 'url', '') or ''
+                else:
+                    title = str(article.get('title', ''))
+                    url = str(article.get('url', ''))
+
+                # 使用链接文本
+                if url:
+                    elements = [
+                        self._create_text_element(f"{j}. "),
+                        self._create_text_element(title, url)
+                    ]
+                    blocks.append(self._create_rich_text_block(elements))
+                else:
+                    blocks.append(self._create_text_block(f"{j}. {title}"))
+
+            blocks.append(self._create_divider_block())
+
+        # ========== 元数据 ==========
+        blocks.append(self._create_heading_block("关于本日报", 3))
+        blocks.append(self._create_text_block(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"))
+        blocks.append(self._create_text_block(f"文章总数: {len(articles)}"))
+        blocks.append(self._create_text_block(f"数据来源: 技术文章聚合系统"))
+
+        return blocks
+
+    def publish_daily_digest(self, articles: list, config: dict) -> PublishResult:
+        """
+        发布结构化日报到飞书文档
+
+        Args:
+            articles: 文章列表（dict 或 Article 对象列表）
+            config: 配置字典，包含：
+                - title: 日报标题（可选，默认按日期生成）
+                - folder_token: 目标文件夹 Token（可选）
+
+        Returns:
+            PublishResult 对象，包含 document_url
+        """
+        if not articles:
+            return PublishResult(
+                success=False,
+                synthesis_id="daily_digest",
+                document_url=None,
+                error_message="没有文章可发布"
+            )
+
+        # 生成标题
+        title = config.get('title', f"技术日报 {datetime.now().strftime('%Y-%m-%d')}")
+
+        # 如果配置中指定了 folder_token，临时覆盖
+        original_folder_token = self.folder_token
+        if 'folder_token' in config:
+            self.folder_token = config.get('folder_token', '')
+
+        try:
+            # 生成飞书块
+            blocks = self._generate_digest_blocks(articles, config)
+
+            # 创建文档
+            success, doc_url = self.create_document(title, blocks)
+
+            if success and doc_url:
+                return PublishResult(
+                    success=True,
+                    synthesis_id="daily_digest",
+                    document_url=doc_url,
+                    published_at=datetime.now()
+                )
+            else:
+                # 保存本地备份
+                backup_path = self._save_digest_backup(articles, title)
+                return PublishResult(
+                    success=False,
+                    synthesis_id="daily_digest",
+                    document_url=None,
+                    error_message=f"发布失败，已保存本地备份: {backup_path}",
+                    published_at=datetime.now()
+                )
+        finally:
+            # 恢复原始 folder_token
+            self.folder_token = original_folder_token
+
+    def _save_digest_backup(self, articles: list, title: str) -> str:
+        """
+        保存日报本地备份
+
+        Args:
+            articles: 文章列表
+            title: 日报标题
+
+        Returns:
+            备份文件路径
+        """
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"daily_digest_{timestamp}.md"
+        filepath = self.backup_dir / filename
+
+        content = f"# {title}\n\n"
+        content += f"**生成时间**: {datetime.now().isoformat()}\n"
+        content += f"**文章数量**: {len(articles)}\n\n"
+        content += "---\n\n"
+
+        # 按分类组织
+        categories = {cat: [] for cat in self.CATEGORY_NAMES.keys()}
+        for article in articles:
+            cat = self._classify_article(article)
+            categories[cat].append(article)
+
+        for cat_name in self.CATEGORY_NAMES.keys():
+            cat_articles = categories.get(cat_name, [])
+            if cat_articles:
+                content += f"## {cat_name}\n\n"
+                for i, article in enumerate(cat_articles, 1):
+                    if hasattr(article, 'title'):
+                        title = article.title
+                        url = getattr(article, 'url', '')
+                    else:
+                        title = str(article.get('title', ''))
+                        url = str(article.get('url', ''))
+                    content += f"{i}. [{title}]({url})\n"
+                content += "\n"
+
+        filepath.write_text(content, encoding='utf-8')
+        logger.info(f"日报本地备份已保存: {filepath}")
+        return str(filepath)

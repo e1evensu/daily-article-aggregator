@@ -29,6 +29,7 @@ sources:
       - "rss/SecureRss.opml"               # 安全RSS（大型）
       - "rss/wechatRSS.opml"               # 微信公众号RSS
       - "rss/hn-popular-blogs-2025.opml"   # HN热门博客2025（92个高质量技术博客）
+      - "rss/hn-top-blogs.opml"            # HN Top 90 博客（Karpathy推荐）
 
 # AI配置（所有值都支持环境变量覆盖）
 ai:

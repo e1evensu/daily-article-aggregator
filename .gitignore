@@ -50,7 +50,11 @@ data/checkpoints/
 data/doc_backups/
 
 # Reports (generated)
-reports/
+# reports/ 改为只忽略特定文件，保留 filtered_feeds.opml
+reports/*.json
+reports/*.md
+reports/*.opml
+!reports/filtered_feeds.opml
 
 # Hypothesis testing cache
 .hypothesis/

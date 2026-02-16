@@ -360,7 +360,7 @@ feedback:
 # PDF翻译服务配置
 # PDF Translation Service Configuration
 pdf_translation:
-  enabled: false                      # 禁用PDF翻译服务（paper_translator模块未安装）
+  enabled: true                      # 启用PDF翻译服务
   input_dir: "data/papers/input"     # PDF输入目录
   output_dir: "data/papers/output"   # 翻译输出目录
   # DeepSeek API配置

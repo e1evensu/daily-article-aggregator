@@ -25,9 +25,10 @@ class PushLevel(Enum):
     推送级别枚举
     Push Level Enumeration
     """
-    LEVEL_1 = 1  # 详细推送（前 10%）
-    LEVEL_2 = 2  # 简要推送（10%-40%）
-    LEVEL_3 = 3  # 链接推送（40%-100%）
+    LEVEL_1 = 1  # 详细推送（前 10%）- 重点推荐
+    LEVEL_2 = 2  # 简要推送（10%-30%）- 推荐
+    LEVEL_3 = 3  # 链接推送（30%-60%）- 其他
+    LEVEL_4 = 4  # 不推送（后 40%）
 
 
 @dataclass
@@ -48,13 +49,14 @@ class TieredPusher:
         ai_analyzer: Any = None
     ):
         self.level1_threshold: float = config.get('level1_threshold', 0.10)
-        self.level2_threshold: float = config.get('level2_threshold', 0.40)
+        self.level2_threshold: float = config.get('level2_threshold', 0.30)
+        self.level3_threshold: float = config.get('level3_threshold', 0.60)
         self.feishu_bot = feishu_bot
         self.ai_analyzer = ai_analyzer
-        logger.info(f"TieredPusher initialized: L1={self.level1_threshold:.0%}, L2={self.level2_threshold:.0%}")
+        logger.info(f"TieredPusher initialized: L1={self.level1_threshold:.0%}, L2={self.level2_threshold:.0%}, L3={self.level3_threshold:.0%}")
 
     def categorize_articles(
-        self, 
+        self,
         scored_articles: list[Any]
     ) -> dict[PushLevel, list[TieredArticle]]:
         """将文章按优先级分级"""
@@ -63,33 +65,43 @@ class TieredPusher:
             PushLevel.LEVEL_2: [],
             PushLevel.LEVEL_3: [],
         }
-        
+
         if not scored_articles:
             return result
-        
+
         n = len(scored_articles)
         level1_end = int(n * self.level1_threshold)
         level2_end = int(n * self.level2_threshold)
-        
+        level3_end = int(n * self.level3_threshold)
+
+        push_count = 0
+        skip_count = 0
+
         for i, scored in enumerate(scored_articles):
             article = getattr(scored, 'article', scored)
             score = getattr(scored, 'score', 0)
-            
+
+            # 后40%不推送
+            if i >= level3_end:
+                skip_count += 1
+                continue
+
             if i < level1_end:
                 level = PushLevel.LEVEL_1
             elif i < level2_end:
                 level = PushLevel.LEVEL_2
             else:
                 level = PushLevel.LEVEL_3
-            
+
             tiered = TieredArticle(
                 article=article if isinstance(article, dict) else {},
                 score=score,
                 level=level
             )
             result[level].append(tiered)
-        
-        logger.info(f"TieredPusher categorized {n} articles: L1={len(result[PushLevel.LEVEL_1])}, L2={len(result[PushLevel.LEVEL_2])}, L3={len(result[PushLevel.LEVEL_3])}")
+            push_count += 1
+
+        logger.info(f"TieredPusher categorized {n} articles: 推送{push_count}篇(L1={len(result[PushLevel.LEVEL_1])}, L2={len(result[PushLevel.LEVEL_2])}, L3={len(result[PushLevel.LEVEL_3])}), 跳过{skip_count}篇")
         return result
 
     def _format_level1_article(self, tiered: TieredArticle) -> str:

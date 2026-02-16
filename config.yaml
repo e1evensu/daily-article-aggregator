@@ -18,8 +18,8 @@ sources:
   
   rss:
     enabled: true
-    # 使用合并后的OPML文件（包含所有评估通过的订阅源）
-    opml_path: "merged_feeds.opml"
+    # 使用评估筛选后的OPML文件（631个高质量源）
+    opml_path: "reports/filtered_feeds.opml"
     # 额外的OPML文件列表（用于评估）
     opml_files:
       - "rss/CyberSecurityRSS.opml"        # 网络安全RSS（完整版）
@@ -172,9 +172,10 @@ vulnerability_filter:
 # Tiered Push Configuration
 tiered_push:
   enabled: true
-  level1_threshold: 0.10  # 前 10%
-  level2_threshold: 0.40  # 10%-40%
-  # level3 为剩余部分 (40%-100%)
+  level1_threshold: 0.10   # 前 10% - 重点推荐 🔥
+  level2_threshold: 0.30   # 10%-30% - 推荐 ⭐
+  level3_threshold: 0.60  # 30%-60% - 其他 📋
+  # 后40%不推送
 
 # 智能筛选配置
 # Smart Selector Configuration

@@ -95,11 +95,9 @@ class SmartSelector:
         filtered = self._remove_duplicates(filtered)
         logger.info(f"去重后: {len(filtered)} 篇")
         
-        # 第四步：限制数量
-        if len(filtered) > self.max_articles:
-            filtered = filtered[:self.max_articles]
-        
-        logger.info(f"SmartSelector: 最终选择 {len(filtered)} 篇文章")
+        # 第四步：不限制数量，全部传给分级推送器按百分比筛选
+        # 0-10%: 重点推荐, 10-30%: 推荐, 30-60%: 其他, 后40%不推送
+        logger.info(f"SmartSelector: 选出 {len(filtered)} 篇文章，按百分比分级推送")
         return filtered
 
     def _filter_by_quality(

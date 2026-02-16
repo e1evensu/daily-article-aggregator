@@ -229,18 +229,7 @@ class SmartSelector:
                 result.append(article)
 
         return result
-                parts = title.split(':', 1)
-                if len(parts) > 1:
-                    title_key = parts[1].strip()[:50]
-            else:
-                title_key = title[:50]
-            
-            if title_key and title_key not in seen_titles:
-                seen_titles.add(title_key)
-                result.append(article)
-        
-        return result
-    
+
     def generate_daily_summary(
         self, 
         selected_articles: List[Dict[str, Any]]

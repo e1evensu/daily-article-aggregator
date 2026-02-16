@@ -15,7 +15,7 @@ Uses AI to comprehensively evaluate articles and generate daily picks.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List, Dict
 
 from ..scoring.ai_scorer import AIScorer, AIScoreResult
 

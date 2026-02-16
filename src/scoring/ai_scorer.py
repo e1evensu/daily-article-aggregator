@@ -18,7 +18,7 @@ Features:
 import json
 import logging
 from dataclasses import dataclass, field, asdict
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List, Dict
 
 logger = logging.getLogger(__name__)
 

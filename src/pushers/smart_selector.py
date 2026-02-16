@@ -200,21 +200,35 @@ class SmartSelector:
         return result
     
     def _remove_duplicates(
-        self, 
+        self,
         articles: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """去除重复/相似内容"""
-        seen_titles = set()
+        """去除重复/相似内容 - 按内容相似度"""
+        if len(articles) <= 1:
+            return articles
+
         result = []
-        
+        # 使用摘要或内容进行相似度比较
         for article in articles:
-            title = article.get('title', '').lower().strip()
-            
-            # 简单的标题去重
-            # 提取标题的关键部分（去除 CVE 编号等）
-            title_key = title
-            if title.startswith('cve-'):
-                # CVE 标题：取描述部分
+            content = article.get('zh_summary') or article.get('summary') or article.get('title', '')
+            content_lower = content.lower()
+
+            is_duplicate = False
+            for existing in result:
+                existing_content = existing.get('zh_summary') or existing.get('summary') or existing.get('title', '')
+                # 简单比较：如果内容有50%以上相同则认为是重复
+                if existing_content and content_lower:
+                    # 计算公共字符数
+                    common_chars = sum(1 for c in content_lower if c in existing_content.lower())
+                    similarity = common_chars / max(len(content_lower), len(existing_content.lower()))
+                    if similarity > 0.5:
+                        is_duplicate = True
+                        break
+
+            if not is_duplicate:
+                result.append(article)
+
+        return result
                 parts = title.split(':', 1)
                 if len(parts) > 1:
                     title_key = parts[1].strip()[:50]

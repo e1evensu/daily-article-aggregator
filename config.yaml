@@ -183,6 +183,24 @@ smart_selector:
   max_articles: 100         # 每日最多推送文章数
   min_quality_score: 50     # 最低质量分（0-100）
   source_balance: true      # 是否平衡不同来源
+  enable_realtime_scoring: true  # 是否启用实时 AI 评分
+  scoring_threshold: 40     # AI 评分阈值，低于此分数直接过滤
+
+# AI 实时评分配置
+# AI Real-time Scoring Configuration
+ai_scorer:
+  enabled: true
+  batch_size: 10           # 批量评分大小
+  timeout: 60               # API 超时时间（秒）
+  # 使用全局 AI 配置
+  api_base: "${OPENAI_API_BASE:https://api.openai.com/v1}"
+  api_key: "${OPENAI_API_KEY}"
+  model: "${OPENAI_MODEL:gpt-4o-mini}"
+  # 评分权重配置
+  weights:
+    relevance: 0.40         # 相关性权重
+    quality: 0.35           # 质量权重
+    timeliness: 0.25        # 时效性权重
 
 # 优先级评分配置
 # Priority Scoring Configuration

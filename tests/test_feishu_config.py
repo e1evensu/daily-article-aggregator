@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """测试飞书配置"""
 import os
+import sys
+sys.path.insert(0, '/opt/daily-article-aggregator')
 
 # 直接读取 .env 文件
 env_path = '/opt/daily-article-aggregator/.env'

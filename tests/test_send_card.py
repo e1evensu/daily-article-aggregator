@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """测试发送带反馈按钮的消息"""
 import os
+import sys
+sys.path.insert(0, '/opt/daily-article-aggregator')
 
 # 加载环境变量
 env_path = '/opt/daily-article-aggregator/.env'

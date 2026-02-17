@@ -100,7 +100,7 @@ def sync_knowledge_base(
     if dry_run:
         logger.info("[DRY RUN] 以下文章将被同步:")
         for article in articles[:10]:
-            logger.info(f"  - {article.title[:50]}...")
+            logger.info(f"  - {article.get('title', 'N/A')[:50]}...")
         if total_articles > 10:
             logger.info(f"  ... 还有 {total_articles - 10} 篇")
         return {
@@ -127,15 +127,14 @@ def sync_knowledge_base(
             article_dicts = []
             for article in batch:
                 article_dict = {
-                    "id": article.id,
-                    "title": article.title,
-                    "content": article.content or article.summary or "",
-                    "url": article.url,
-                    "source": article.source,
-                    "source_type": article.source_type,
-                    "category": getattr(article, "category", None),
-                    "published_at": article.published_at.isoformat() if article.published_at else None,
-                    "fetched_at": article.fetched_at.isoformat() if article.fetched_at else None,
+                    "id": article.get('id'),
+                    "title": article.get('title', ''),
+                    "content": article.get('content') or article.get('summary') or "",
+                    "url": article.get('url', ''),
+                    "source": article.get('source', ''),
+                    "source_type": article.get('source_type', ''),
+                    "category": article.get('category'),
+                    "published_date": article.get('published_at'),
                 }
                 article_dicts.append(article_dict)
             

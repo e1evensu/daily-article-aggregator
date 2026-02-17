@@ -418,11 +418,11 @@ class KnowledgeBase:
                     valid_embeddings.append(embedding)
                     metadatas.append({
                         'article_id': int(article_id),
-                        'title': title,
-                        'url': article.get('url', ''),
-                        'source_type': article.get('source_type', ''),
-                        'published_date': article.get('published_date', ''),
-                        'category': article.get('category', ''),
+                        'title': title or '',
+                        'url': article.get('url') or '',
+                        'source_type': article.get('source_type') or '',
+                        'published_date': article.get('published_date') or '',
+                        'category': article.get('category') or '',
                         'chunk_index': i
                     })
                 

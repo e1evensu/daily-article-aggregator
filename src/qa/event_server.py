@@ -1222,7 +1222,11 @@ class FeishuEventServer:
         
         # 检查是否是翻译命令（不需要 PDF 服务存在也能进入分支）
         question_lower = question.lower().strip()
-        if question_lower.startswith('翻译 ') or question_lower.startswith('translate '):
+        # 支持多种格式：翻译 xxx, translate xxx, 翻译[xxx
+        if (question_lower.startswith('翻译 ') or
+            question_lower.startswith('translate ') or
+            question_lower.startswith('翻译[') or
+            '翻译' in question_lower):
             logger.info(f"Detected translation command: {question}")
 
             # 检查 PDF 翻译服务是否可用
@@ -1241,7 +1245,15 @@ class FeishuEventServer:
                 return {"success": False, "error": "Feishu bot not configured"}
 
             # 提取要翻译的内容
-            target = question.split(' ', 1)[-1].strip()
+            # 支持格式：翻译 2501.12345, 翻译[xxx, translate xxx
+            target = question
+            # 去除 "翻译" 或 "translate" 前缀
+            for prefix in ['翻译[', '翻译 ', 'translate ', 'translate[']:
+                if target.lower().startswith(prefix):
+                    target = target[len(prefix):]
+                    break
+            # 去除结尾的 ]
+            target = target.strip().rstrip(']')
             if not target:
                 self._send_reply(
                     message="请提供要翻译的内容，例如：翻译 2501.12345 或 翻译 https://arxiv.org/abs/2501.12345",

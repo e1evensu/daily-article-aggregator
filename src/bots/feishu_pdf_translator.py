@@ -112,13 +112,13 @@ class FeishuPDFTranslationService:
             # 检查是否是纯 arXiv ID（如 2501.12345 或 arxiv:2501.12345）
             import re
             if re.match(r'^\d{4}\.\d{4,5}$', cleaned_url):
-                # 转换为 arXiv URL
-                cleaned_url = f"https://arxiv.org/abs/{cleaned_url}"
-                logger.info(f"已将 arXiv ID 转换为 URL: {cleaned_url}")
+                # 转换为 arXiv PDF URL
+                cleaned_url = f"https://arxiv.org/pdf/{cleaned_url}.pdf"
+                logger.info(f"已将 arXiv ID 转换为 PDF URL: {cleaned_url}")
             elif cleaned_url.startswith('arxiv:'):
                 arxiv_id = cleaned_url[6:].strip()
-                cleaned_url = f"https://arxiv.org/abs/{arxiv_id}"
-                logger.info(f"已将 arXiv ID 转换为 URL: {cleaned_url}")
+                cleaned_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                logger.info(f"已将 arXiv ID 转换为 PDF URL: {cleaned_url}")
 
             # 1. 下载PDF
             pdf_path = self._download_pdf(cleaned_url)

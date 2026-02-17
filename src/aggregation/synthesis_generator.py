@@ -280,8 +280,8 @@ class SynthesisGenerator:
             synthesis_content = self._format_synthesis_content(result)
             
             synthesis = Synthesis(
-                synthesis_id=f"synthesis_{cluster.topic_id}",
-                topic_id=cluster.topic_id,
+                id=f"synthesis_{cluster.id}",
+                cluster_id=cluster.id,
                 title=result.get('title', default_synthesis.title),
                 content=synthesis_content,
                 key_points=result.get('key_points', default_synthesis.key_points),

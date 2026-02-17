@@ -511,13 +511,13 @@ class FeishuDocPublisher:
             备份文件路径
         """
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"synthesis_{synthesis.topic_id}_{timestamp}.md"
+        filename = f"synthesis_{synthesis.cluster_id}_{timestamp}.md"
         filepath = self.backup_dir / filename
-        
+
         content = f"""# {synthesis.title}
 
 **生成时间**: {synthesis.generated_at.isoformat() if synthesis.generated_at else 'N/A'}
-**话题 ID**: {synthesis.topic_id}
+**话题 ID**: {synthesis.cluster_id}
 
 ---
 

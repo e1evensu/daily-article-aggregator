@@ -228,8 +228,8 @@ class SynthesisGenerator:
         
         # 默认综述（AI 失败时使用）
         default_synthesis = Synthesis(
-            synthesis_id=f"synthesis_{cluster.topic_id}",
-            topic_id=cluster.topic_id,
+            id=f"synthesis_{cluster.id}",
+            cluster_id=cluster.id,
             title=self.generate_title(cluster),
             content=self._generate_fallback_content(cluster),
             key_points=self.extract_key_points(cluster),

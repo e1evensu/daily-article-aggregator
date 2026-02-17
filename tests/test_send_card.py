@@ -91,5 +91,19 @@ print(f"文本消息发送结果: {result}")
 
 # 测试带反馈按钮的卡片消息
 print("\n测试发送卡片消息...")
-result2 = bot.send_message_to_chat(chat_id, "interactive", card)
-print(f"卡片消息发送结果: {result2}")
+import httpx
+token = bot.get_tenant_access_token()
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+resp = httpx.post(
+    "https://open.feishu.cn/open-apis/im/v1/messages",
+    headers=headers,
+    json={
+        "receive_id_type": "chat_id",
+        "receive_id": chat_id,
+        "msg_type": "interactive",
+        "content": card
+    },
+    timeout=30
+)
+print(f"状态码: {resp.status_code}")
+print(f"响应: {resp.text}")

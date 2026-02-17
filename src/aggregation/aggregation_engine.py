@@ -839,8 +839,8 @@ class AggregationEngine:
             return []
         
         pending = [
-            cluster for cluster in clusters 
-            if cluster.is_ready_for_synthesis(self.aggregation_threshold)
+            cluster for cluster in clusters
+            if cluster.is_ready_for_synthesis
         ]
         
         logger.info(

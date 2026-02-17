@@ -308,8 +308,15 @@ class FeishuPDFTranslationService:
                 '[class*="footer"]', '[class*="header"]', '[class*="nav"]',
                 '[class*="social"]', '[class*="share"]', '[class*="related"]',
                 '[class*="recommend"]', '[class*="ad-"]', '[class*="popup"]',
+                '[class*="citation"]', '[class*="reference"]', '[class*="author"]',
+                '[class*="bio"]', '[class*="profile"]', '[class*="metadata"]',
+                '[class*="dataset"]', '[class*="model"]', '[class*="space"]',
+                '[class*="collection"]', '[class*="bibtex"]', '[class*="citing"]',
+                '[class*="similar"]', '[class*="more-like"]',
                 '[id*="comment"]', '[id*="sidebar"]', '[id*="footer"]',
-                '[id*="header"]', '[id*="nav"]'
+                '[id*="header"]', '[id*="nav"]', '[id*="citation"]',
+                # 特定于 HuggingFace 的噪声
+                '[class*="lg:w-"]', '[class*="rounded-"]',
             ]
             for selector in noise_selectors:
                 for elem in soup.select(selector):

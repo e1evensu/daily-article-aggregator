@@ -230,6 +230,9 @@ class FeishuEventServer:
         
         # 反馈处理器（可选）
         self._feedback_handler = None
+
+        # PDF 翻译服务（可选）
+        self._pdf_translation_service = None
         
         # 事件去重器 (Requirement 17.4)
         self._deduplicator = EventDeduplicator()
@@ -1100,6 +1103,27 @@ class FeishuEventServer:
         Requirements: 5.4
         """
         self._rate_limiter = rate_limiter
+
+    def set_pdf_translation_service(self, service) -> None:
+        """
+        设置 PDF 翻译服务
+
+        设置后，用户可以发送翻译命令来翻译 arXiv 论文。
+
+        Args:
+            service: FeishuPDFTranslationService 实例
+
+        Example:
+            >>> from src.bots.feishu_pdf_translator import FeishuPDFTranslationService
+            >>> translator = FeishuPDFTranslationService(config)
+            >>> server.set_pdf_translation_service(translator)
+
+        Commands:
+            - "翻译 paper_id" 或 "translate paper_id" - 翻译指定论文
+            - "翻译 https://arxiv.org/abs/xxx" - 直接翻译 arXiv 链接
+        """
+        self._pdf_translation_service = service
+        logger.info("PDF translation service set")
         logger.info("Rate limiter set")
     
     @property
@@ -1196,6 +1220,30 @@ class FeishuEventServer:
                     "retry_after": rate_result.reset_after,
                 }
         
+        # 检查是否是翻译命令
+        if self._pdf_translation_service and self._feishu_bot:
+            # 检测翻译命令
+            question_lower = question.lower().strip()
+            if question_lower.startswith('翻译 ') or question_lower.startswith('translate '):
+                # 提取要翻译的内容
+                target = question.split(' ', 1)[-1].strip()
+                if not target:
+                    self._send_reply(
+                        message="请提供要翻译的内容，例如：翻译 2501.12345 或 翻译 https://arxiv.org/abs/2501.12345",
+                        chat_id=chat_id,
+                        sender_id=sender_id,
+                        is_private=is_private
+                    )
+                    return {"success": True, "answer": "需要提供翻译目标"}
+
+                # 处理翻译请求（在后台运行）
+                threading.Thread(
+                    target=self._handle_pdf_translation,
+                    args=(target, chat_id, sender_id, is_private),
+                    daemon=True
+                ).start()
+                return {"success": True, "answer": "翻译请求已提交，请稍候..."}
+
         # 调用 QAEngine 处理问答
         try:
             response = self._qa_engine.process_query(
@@ -1313,10 +1361,68 @@ class FeishuEventServer:
                 )
             
             return success
-            
+
         except Exception as e:
             logger.error(f"Error sending reply: {e}", exc_info=True)
             return False
+
+    def _handle_pdf_translation(
+        self,
+        target: str,
+        chat_id: str,
+        sender_id: str,
+        is_private: bool
+    ) -> None:
+        """
+        处理 PDF 翻译请求（后台线程）
+
+        Args:
+            target: 翻译目标（arXiv ID 或 URL）
+            chat_id: 聊天 ID
+            sender_id: 发送者 ID
+            is_private: 是否是私聊
+        """
+        try:
+            logger.info(f"Processing PDF translation request: {target}")
+
+            # 发送处理中消息
+            self._send_reply(
+                message=f"正在处理翻译请求: {target}，请稍候...",
+                chat_id=chat_id,
+                sender_id=sender_id,
+                is_private=is_private
+            )
+
+            # 调用 PDF 翻译服务
+            result = self._pdf_translation_service.process_pdf_link(target)
+
+            if result.get("success"):
+                # 翻译成功，发送完成消息
+                message = f"翻译完成！\n\n{result.get('message', '请查看上方的文件')}"
+                self._send_reply(
+                    message=message,
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    is_private=is_private
+                )
+            else:
+                # 翻译失败
+                error_msg = result.get("error", "未知错误")
+                self._send_reply(
+                    message=f"翻译失败: {error_msg}",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    is_private=is_private
+                )
+
+        except Exception as e:
+            logger.error(f"Error in PDF translation: {e}", exc_info=True)
+            self._send_reply(
+                message=f"翻译处理出错: {str(e)}",
+                chat_id=chat_id,
+                sender_id=sender_id,
+                is_private=is_private
+            )
     
     def handle_message(self, event_data: dict) -> dict:
         """

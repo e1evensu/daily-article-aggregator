@@ -53,6 +53,7 @@ from src.qa.config import (
     QAEngineConfig
 )
 from src.bots.feishu_bot import FeishuAppBot
+from src.bots.feishu_pdf_translator import FeishuPDFTranslationService
 from src.analyzers.ai_analyzer import AIAnalyzer
 from src.feedback.feedback_handler import FeedbackHandler
 
@@ -214,6 +215,16 @@ def run_server(
     db_path = config.get("database", {}).get("path", "data/articles.db")
     feedback_handler = FeedbackHandler(db_path=db_path)
     server.set_feedback_handler(feedback_handler)
+
+    # 设置 PDF 翻译服务
+    logger.info("初始化 PDF 翻译服务...")
+    pdf_config = config.get("pdf_translation", {})
+    if pdf_config.get("enabled", False):
+        pdf_translator = FeishuPDFTranslationService(pdf_config)
+        server.set_pdf_translation_service(pdf_translator)
+        logger.info("PDF 翻译服务已启用")
+    else:
+        logger.info("PDF 翻译服务未启用")
     
     # 打印服务器信息
     logger.info("=" * 60)

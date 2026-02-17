@@ -50,7 +50,12 @@ ai:
 
     '
 feishu:
-  webhook_url: ${FEISHU_WEBHOOK_URL}
+  webhook_url: ${FEISHU_WEBHOOK_URL:}
+  # 应用中心 API 配置（优先使用）
+  app_id: ${FEISHU_APP_ID:}
+  app_secret: ${FEISHU_APP_SECRET:}
+  # 群聊 ID（用于应用中心 API 发送消息到群）
+  chat_id: ${FEISHU_CHAT_ID:}
 feishu_bitable:
   enabled: true
   app_id: ${FEISHU_APP_ID}

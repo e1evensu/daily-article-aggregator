@@ -28,7 +28,7 @@ from src.fetchers.rss_fetcher import RSSFetcher
 from src.processors.content_processor import ContentProcessor
 from src.analyzers.ai_analyzer import AIAnalyzer
 from src.repository import ArticleRepository
-from src.bots.feishu_bot import FeishuBot
+from src.bots.feishu_bot import FeishuBot, FeishuAppBot
 
 # Import new fetchers and components
 try:
@@ -64,6 +64,173 @@ except ImportError:
 
 # 配置日志
 logger = logging.getLogger(__name__)
+
+
+class FeishuAppBotWrapper:
+    """
+    FeishuAppBot 包装类，用于兼容 FeishuBot 接口
+
+    将 FeishuAppBot 的 API 调用适配为 FeishuBot 接口，
+    以便在现有代码中使用应用中心 API 发送消息。
+    """
+
+    def __init__(self, app_bot: FeishuAppBot, chat_id: str, proxy: str = None):
+        """
+        初始化包装类
+
+        Args:
+            app_bot: FeishuAppBot 实例
+            chat_id: 群聊 ID
+            proxy: 代理 URL（可选）
+        """
+        self.app_bot = app_bot
+        self.chat_id = chat_id
+        self.proxy = proxy
+
+    def send_text(self, text: str) -> bool:
+        """
+        发送文本消息到群聊
+
+        Args:
+            text: 消息文本
+
+        Returns:
+            是否发送成功
+        """
+        # 构建飞书富文本格式的文本消息
+        content = {"text": text}
+        return self.app_bot.send_message_to_chat(
+            self.chat_id,
+            "text",
+            content
+        )
+
+    def send_rich_text(self, title: str, content: list) -> bool:
+        """
+        发送富文本消息到群聊
+
+        Args:
+            title: 消息标题
+            content: 富文本内容（飞书格式的二维数组）
+
+        Returns:
+            是否发送成功
+        """
+        post_content = {
+            "zh_cn": {
+                "title": title,
+                "content": content
+            }
+        }
+        return self.app_bot.send_message_to_chat(
+            self.chat_id,
+            "post",
+            post_content
+        )
+
+    def push_articles(self, articles: list[dict], batch_size: int = 10, with_feedback: bool = True) -> bool:
+        """
+        推送文章列表到群聊
+
+        Args:
+            articles: 文章列表
+            batch_size: 每批推送的文章数量
+            with_feedback: 是否添加反馈按钮
+
+        Returns:
+            是否全部推送成功
+        """
+        if not articles:
+            logger.info("没有文章需要推送")
+            return True
+
+        # 过滤有效文章
+        valid_articles = [
+            a for a in articles
+            if a.get('title', '').strip() and a.get('url', '').strip()
+        ]
+
+        if not valid_articles:
+            logger.warning("所有文章都缺少必要字段（title或url）")
+            return False
+
+        total_count = len(valid_articles)
+        logger.info(f"准备推送 {total_count} 篇文章到飞书（每批 {batch_size} 篇）")
+
+        # 分批推送
+        all_success = True
+
+        for i in range(0, total_count, batch_size):
+            batch = valid_articles[i:i + batch_size]
+            batch_start = i + 1
+            batch_end = min(i + batch_size, total_count)
+
+            # 构建富文本内容
+            content = []
+            for j, article in enumerate(batch, 1):
+                title = article.get('title', '').strip()
+                url = article.get('url', '').strip()
+
+                if not title or not url:
+                    continue
+
+                # 标题行（带链接）
+                title_line = [
+                    {"tag": "text", "text": f"{batch_start + j - 1}. "},
+                    {"tag": "a", "text": title, "href": url}
+                ]
+                content.append(title_line)
+
+                # 摘要行
+                zh_summary = article.get('zh_summary', '').strip()
+                summary = article.get('summary', '').strip()
+
+                if zh_summary:
+                    content.append([{"tag": "text", "text": f"   摘要: {zh_summary}"}])
+                elif summary:
+                    content.append([{"tag": "text", "text": f"   摘要: {summary}"}])
+
+                # 空行分隔
+                content.append([{"tag": "text", "text": ""}])
+
+            title = f"📚 今日文章推荐 ({batch_start}-{batch_end}/{total_count}篇)"
+
+            success = self.send_rich_text(title, content)
+
+            if not success:
+                logger.error(f"第 {i // batch_size + 1} 批推送失败")
+                all_success = False
+
+            # 批次之间间隔
+            if i + batch_size < total_count:
+                time.sleep(1)
+
+        if all_success:
+            logger.info(f"全部 {total_count} 篇文章推送成功")
+        else:
+            logger.warning(f"部分批次推送失败，请检查日志")
+
+        return all_success
+
+    def send_interactive_card(self, card: dict) -> bool:
+        """
+        发送交互式卡片消息到群聊
+
+        Args:
+            card: 飞书卡片 JSON 结构
+
+        Returns:
+            是否发送成功
+        """
+        if not card:
+            logger.warning("尝试发送空卡片")
+            return False
+
+        return self.app_bot.send_message_to_chat(
+            self.chat_id,
+            "interactive",
+            card
+        )
 
 
 class Scheduler:
@@ -177,16 +344,31 @@ class Scheduler:
         
         # 飞书机器人
         feishu_config = self.config.get('feishu', {})
+        app_id = feishu_config.get('app_id', '')
+        app_secret = feishu_config.get('app_secret', '')
+        chat_id = feishu_config.get('chat_id', '')
         webhook_url = feishu_config.get('webhook_url', '')
-        if webhook_url:
+
+        # 优先使用应用中心 API（FeishuAppBot）
+        if app_id and app_secret and chat_id:
+            proxy_url = None
+            proxy_config = self.config.get('proxy', {})
+            if proxy_config.get('enabled', False):
+                proxy_url = proxy_config.get('url')
+            # 创建 FeishuAppBot 实例并包装为兼容 FeishuBot 接口
+            app_bot = FeishuAppBot(app_id, app_secret)
+            # 创建包装类以兼容原有接口
+            components['feishu_bot'] = FeishuAppBotWrapper(app_bot, chat_id, proxy_url)
+            logger.info(f"FeishuAppBot initialized with chat_id={chat_id}")
+        elif webhook_url:
             proxy_url = None
             proxy_config = self.config.get('proxy', {})
             if proxy_config.get('enabled', False):
                 proxy_url = proxy_config.get('url')
             components['feishu_bot'] = FeishuBot(webhook_url, proxy=proxy_url)
-            logger.info("FeishuBot initialized")
+            logger.info("FeishuBot initialized (webhook)")
         else:
-            logger.warning("Feishu webhook_url not configured, push will be skipped")
+            logger.warning("Feishu app_id/app_secret/chat_id or webhook_url not configured, push will be skipped")
         
         # 初始化高级功能组件（如果可用）
         if ADVANCED_FEATURES:

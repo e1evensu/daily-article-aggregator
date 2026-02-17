@@ -116,6 +116,11 @@ def load_articles_from_db(
                 published_date=article_dict.get('published_date', ''),
                 category=article_dict.get('category', ''),
             )
+
+            # 跳过已分析的文章（有摘要或中文摘要）
+            if article.summary or article.zh_summary:
+                continue
+
             articles.append(article)
         except Exception as e:
             logger.warning(f"解析文章失败: {e}")

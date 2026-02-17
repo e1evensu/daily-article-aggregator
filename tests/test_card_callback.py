@@ -39,21 +39,20 @@ print("测试卡片回调处理...")
 print(f"输入数据: {test_data}")
 
 try:
-    from src.qa.event_server import FeishuEventHandler
+    # 直接测试回调处理逻辑
+    event = test_data.get("event", test_data)
+    action = event.get("action", {})
+    value = action.get("value", {})
 
-    # 创建处理器
-    handler = FeishuEventHandler(
-        encryption_key=os.getenv('FEISHU_ENCRYPT_KEY'),
-        verification_token=os.getenv('FEISHU_VERIFICATION_TOKEN'),
-        feedback_handler=None,
-        qa_engine=None
-    )
+    print(f"\n解析结果:")
+    print(f"  action: {value.get('action')}")
+    print(f"  rating: {value.get('rating')}")
+    print(f"  article_id: {value.get('article_id')}")
 
-    # 调用处理方法
-    result, status = handler._handle_card_action(test_data)
-    print(f"\n处理结果:")
-    print(f"  状态码: {status}")
-    print(f"  响应: {result}")
+    if value.get("action") == "feedback":
+        print("\n✅ 回调数据解析成功，可以处理反馈")
+    else:
+        print("\n⚠️ 不是反馈动作")
 
 except Exception as e:
     print(f"\n❌ 处理失败: {e}")

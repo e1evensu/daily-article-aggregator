@@ -88,3 +88,8 @@ card = {
 print("测试发送文本消息...")
 result = bot.send_message_to_chat(chat_id, "text", {"text": "🧪 测试消息 - 应用中心 API 正常工作"})
 print(f"文本消息发送结果: {result}")
+
+# 测试带反馈按钮的卡片消息
+print("\n测试发送卡片消息...")
+result2 = bot.send_message_to_chat(chat_id, "interactive", card)
+print(f"卡片消息发送结果: {result2}")

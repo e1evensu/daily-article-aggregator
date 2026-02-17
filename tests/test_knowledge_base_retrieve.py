@@ -15,8 +15,8 @@ def test_knowledge_base_retrieve():
     with open('config.yaml') as f:
         config = yaml.safe_load(f)
 
-    qa_config = QAConfig.from_dict(config.get('knowledge_qa', {}))
-    kb = KnowledgeBase(qa_config.knowledge_base)
+    kb_config = config.get('knowledge_qa', {}).get('chroma', {})
+    kb = KnowledgeBase(kb_config)
 
     embedding_config = config.get('knowledge_qa', {}).get('embedding', {})
     es = EmbeddingService(embedding_config)

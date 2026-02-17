@@ -336,6 +336,27 @@ class ArticleRepository:
 
         return [self._row_to_dict(row) for row in rows]
 
+    def get_articles_since(self, since_time: datetime) -> list[dict[str, Any]]:
+        """
+        获取指定时间之后的文章
+
+        Args:
+            since_time: 起始时间
+
+        Returns:
+            文章列表
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT * FROM articles WHERE fetched_at >= ? ORDER BY fetched_at DESC",
+            (since_time.isoformat(),)
+        )
+        rows = cursor.fetchall()
+
+        return [self._row_to_dict(row) for row in rows]
+
     @retry_on_locked(max_retries=5, base_delay=0.1)
     def mark_as_pushed(self, article_ids: list[int]):
         """

@@ -27,10 +27,12 @@ sources:
     - rss/hn-top-blogs.opml
 ai:
   enabled: true
-  api_base: ${OPENAI_API_BASE:https://api.openai.com/v1}
-  api_key: ${OPENAI_API_KEY}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
-  embedding_model: BAAI/bge-large-zh-v1.5
+  # 对话/生成用 MiniMax (OpenAI 兼容格式)
+  api_base: ${MINIMAX_BASE_URL:https://api.minimaxi.com/v1}
+  api_key: ${MINIMAX_API_KEY}
+  model: ${MINIMAX_MODEL:MiniMax-M2.5}
+  # 嵌入用 SiliconFlow
+  embedding_model: Qwen/Qwen3-Embedding-8B
   max_tokens: 200000
   temperature: 0.7
   timeout: 60
@@ -163,9 +165,9 @@ ai_scorer:
   enabled: true
   batch_size: 10
   timeout: 60
-  api_base: ${OPENAI_API_BASE:https://api.openai.com/v1}
-  api_key: ${OPENAI_API_KEY}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
+  api_base: ${MINIMAX_BASE_URL:https://api.minimaxi.com/v1}
+  api_key: ${MINIMAX_API_KEY}
+  model: ${MINIMAX_MODEL:MiniMax-M2.5}
   weights:
     relevance: 0.4
     quality: 0.35
@@ -213,7 +215,7 @@ topic_aggregation:
   title_weight: 0.6
   keyword_weight: 0.4
   use_ai_similarity: true
-  embedding_model: BAAI/bge-large-zh-v1.5
+  embedding_model: Qwen/Qwen3-Embedding-8B
   blacklist_domains:
   - csdn.net
   - zhihu.com
@@ -285,10 +287,11 @@ pdf_translation:
   enabled: true
   input_dir: data/papers/input
   output_dir: data/papers/output
+  # 翻译用 MiniMax
   deepseek:
-    api_key: ${DEEPSEEK_API_KEY:}
-    base_url: https://api.deepseek.com
-    model: deepseek-chat
+    api_key: ${MINIMAX_API_KEY:}
+    base_url: ${MINIMAX_BASE_URL:https://api.minimaxi.com/v1}
+    model: ${MINIMAX_MODEL:MiniMax-M2.5}
   siliconflow:
     api_key: ${SILICONFLOW_API_KEY:}
     base_url: https://api.siliconflow.cn/v1

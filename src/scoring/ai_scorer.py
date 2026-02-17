@@ -171,7 +171,7 @@ class AIScorer:
             api_key = config.get('api_key', '')
             self.client = OpenAI(base_url=api_base, api_key=api_key)
 
-        self.model = config.get('model', 'gpt-4o-mini')
+        self.model = config.get('model', 'MiniMax-M2.5')
         self.batch_size = config.get('batch_size', 10)
         self.timeout = config.get('timeout', 60)
         self.scoring_prompt = config.get('scoring_prompt', DEFAULT_SCORING_PROMPT)

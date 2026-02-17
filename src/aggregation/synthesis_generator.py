@@ -96,7 +96,7 @@ class SynthesisGenerator:
             except Exception as e:
                 logger.error(f"AI 客户端初始化失败: {e}")
         
-        self.model = config.get('model', 'gpt-4o-mini')
+        self.model = config.get('model', 'MiniMax-M2.5')
         self.max_tokens = config.get('max_tokens', 4000)
         self.temperature = config.get('temperature', 0.7)
         

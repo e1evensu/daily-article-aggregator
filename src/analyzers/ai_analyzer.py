@@ -154,7 +154,7 @@ class AIAnalyzer:
         )
         
         # 模型配置
-        self.model = config.get('model', 'gpt-4o-mini')
+        self.model = config.get('model', 'MiniMax-M2.5')
         
         # max_tokens处理：空字符串、None、0都表示不限制
         max_tokens_value = config.get('max_tokens')

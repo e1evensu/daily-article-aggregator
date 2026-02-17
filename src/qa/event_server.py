@@ -1453,7 +1453,20 @@ class FeishuEventServer:
                         time.sleep(0.5)  # 避免发送太快
                 else:
                     # PDF 翻译结果
-                    message = f"翻译完成！\n\n{result.get('message', '请查看上方的文件')}"
+                    stats = result.get('stats', {})
+                    doc_url = result.get('doc_url', '')
+
+                    message = f"📄 论文翻译完成！\n\n"
+                    message += f"📊 页数: {stats.get('pages', '?')}\n"
+                    message += f"📖 术语数: {stats.get('terms', 0)}\n"
+                    message += f"⏱️ 耗时: {result.get('processing_time', 0):.1f}秒\n\n"
+
+                    if doc_url:
+                        message += f"📄 云文档链接: {doc_url}\n\n"
+                        message += "点击链接查看翻译内容"
+                    else:
+                        message += result.get('message', '')
+
                     self._send_reply(
                         message=message,
                         chat_id=chat_id,

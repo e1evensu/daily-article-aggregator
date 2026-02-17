@@ -49,6 +49,9 @@ class FeishuPDFTranslationService:
         # 飞书配置
         self.feishu_config = config.get('feishu', {})
 
+        # 云文档发布器
+        self._doc_publisher = None
+
         # 缓存翻译文本的对象（用于网页翻译）
         self._text_translator = None
 
@@ -65,6 +68,52 @@ class FeishuPDFTranslationService:
                 model=self.config.get('minimax', {}).get('model', 'MiniMax-Text-01')
             )
         return self._text_translator
+
+    def _get_doc_publisher(self):
+        """获取云文档发布器"""
+        if self._doc_publisher is None:
+            from src.aggregation.feishu_doc_publisher import FeishuDocPublisher
+            self._doc_publisher = FeishuDocPublisher(self.feishu_config)
+        return self._doc_publisher
+
+    def _create_translation_doc(self, title: str, content: str, original_url: str) -> str:
+        """创建翻译内容的云文档"""
+        try:
+            publisher = self._get_doc_publisher()
+
+            # 构建文档块
+            blocks = []
+
+            # 标题
+            blocks.append(publisher._create_heading_block(f"📄 {title}", level=1))
+
+            # 原文链接
+            blocks.append(publisher._create_text_block(f"🔗 原文链接: {original_url}"))
+
+            blocks.append(publisher._create_divider_block())
+
+            # 内容（分段添加，每块有限制）
+            max_block_size = 4000
+            for i in range(0, len(content), max_block_size):
+                chunk = content[i:i+max_block_size]
+                blocks.append(publisher._create_text_block(chunk))
+
+            # 创建文档
+            success, doc_url = publisher.create_document(
+                title=f"[翻译] {title}",
+                blocks=blocks
+            )
+
+            if success and doc_url:
+                logger.info(f"云文档创建成功: {doc_url}")
+                return doc_url
+            else:
+                logger.warning("云文档创建失败")
+                return ""
+
+        except Exception as e:
+            logger.error(f"创建云文档失败: {e}")
+            return ""
 
         logger.info(f"FeishuPDFTranslationService initialized: enabled={self.enabled}")
 
@@ -159,7 +208,32 @@ class FeishuPDFTranslationService:
             # 2. 翻译PDF
             result = self.translator.translate(str(pdf_path))
 
-            # 3. 发送结果到飞书
+            # 3. 构建翻译文本内容用于创建云文档
+            translated_content = []
+            for page in result.pages:
+                page_text = []
+                for block in page.translated_blocks:
+                    if hasattr(block, 'text') and block.text:
+                        page_text.append(block.text)
+                    elif hasattr(block, 'content') and block.content:
+                        page_text.append(block.content)
+                if page_text:
+                    translated_content.append(f"\n--- 第 {page.page_number} 页 ---\n")
+                    translated_content.append("\n".join(page_text))
+
+            full_translated_text = "\n".join(translated_content)
+
+            # 4. 创建云文档
+            doc_url = ""
+            if full_translated_text:
+                logger.info("正在创建云文档...")
+                doc_url = self._create_translation_doc(
+                    title=result.title or "论文翻译",
+                    content=full_translated_text,
+                    original_url=cleaned_url
+                )
+
+            # 5. 发送结果到飞书
             if feishu_client:
                 self._send_to_feishu(
                     feishu_client,
@@ -174,6 +248,7 @@ class FeishuPDFTranslationService:
                 'success': True,
                 'message': '翻译完成',
                 'output_path': result.output_path,
+                'doc_url': doc_url,
                 'processing_time': processing_time,
                 'stats': {
                     'pages': result.total_pages,
@@ -308,13 +383,21 @@ class FeishuPDFTranslationService:
 
         translated_content = '\n\n'.join(translated_chunks)
 
+        # 创建云文档
+        doc_url = self._create_translation_doc(
+            title=title_translated,
+            content=translated_content,
+            original_url=url
+        )
+
         return {
             'success': True,
             'message': '网页翻译完成',
             'title': webpage['title'],
             'title_translated': title_translated,
             'content': translated_content,
-            'url': url
+            'url': url,
+            'doc_url': doc_url
         }
 
     def _send_to_feishu(

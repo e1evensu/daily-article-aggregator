@@ -84,7 +84,7 @@ card = {
     ]
 }
 
-# 发送消息 - 使用 send_message_to_chat
-print("发送消息到群聊...")
-result = bot.send_message_to_chat(chat_id, "interactive", card)
-print(f"发送结果: {result}")
+# 先测试发送文本消息
+print("测试发送文本消息...")
+result = bot.send_message_to_chat(chat_id, "text", {"text": "🧪 测试消息 - 应用中心 API 正常工作"})
+print(f"文本消息发送结果: {result}")

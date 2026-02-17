@@ -32,6 +32,7 @@ sys.path.insert(0, str(project_root))
 from src.config import load_config
 from src.repository import ArticleRepository
 from src.qa.knowledge_base import KnowledgeBase
+from src.qa.embedding_service import EmbeddingService
 
 # 配置日志
 logging.basicConfig(
@@ -67,6 +68,11 @@ def sync_knowledge_base(
     # 初始化知识库
     kb_config = config.get("knowledge_qa", {}).get("chroma", {})
     knowledge_base = KnowledgeBase(kb_config)
+
+    # 设置 embedding service
+    embedding_config = config.get("knowledge_qa", {}).get("embedding", {})
+    embedding_service = EmbeddingService(embedding_config)
+    knowledge_base.set_embedding_service(embedding_service)
     
     # 获取当前知识库统计
     stats_before = knowledge_base.get_stats()

@@ -87,7 +87,7 @@ class FeishuPDFTranslationService:
             blocks.append(publisher._create_divider_block())
 
             # 内容（分段添加，每块有限制）
-            max_block_size = 4000
+            max_block_size = 8000
             for i in range(0, len(content), max_block_size):
                 chunk = content[i:i+max_block_size]
                 blocks.append(publisher._create_text_block(chunk))
@@ -360,10 +360,7 @@ class FeishuPDFTranslationService:
             lines = [line.strip() for line in text.split('\n') if line.strip()]
             text = '\n'.join(lines)
 
-            # 限制文本长度
-            max_length = 40000
-            if len(text) > max_length:
-                text = text[:max_length] + '\n\n... [内容已截断]'
+            # 不限制文本长度
 
             logger.info(f"网页获取成功: {url}, 标题: {title}, 内容长度: {len(text)}")
             return {

@@ -1468,17 +1468,19 @@ class FeishuEventServer:
                     # PDF 翻译结果
                     stats = result.get('stats', {})
                     doc_url = result.get('doc_url', '')
+                    pdf_path = result.get('output_path', '')
 
                     message = f"📄 论文翻译完成！\n\n"
                     message += f"📊 页数: {stats.get('pages', '?')}\n"
                     message += f"📖 术语数: {stats.get('terms', 0)}\n"
+                    message += f"🔢 公式数: {stats.get('formulas', 0)}\n"
+                    message += f"🖼️ 图表数: {stats.get('figures', 0)}\n"
                     message += f"⏱️ 耗时: {result.get('processing_time', 0):.1f}秒\n\n"
 
                     if doc_url:
                         message += f"📄 云文档链接: {doc_url}\n\n"
-                        message += "点击链接查看翻译内容"
-                    else:
-                        message += result.get('message', '')
+
+                    message += "点击链接查看翻译内容"
 
                     self._send_reply(
                         message=message,
@@ -1486,6 +1488,37 @@ class FeishuEventServer:
                         sender_id=sender_id,
                         is_private=is_private
                     )
+
+                    # 如果有 PDF 文件，发送到飞书
+                    if pdf_path and self._feishu_bot:
+                        import os
+                        if os.path.exists(pdf_path):
+                            try:
+                                # 上传文件
+                                token = self._feishu_bot.get_tenant_access_token()
+                                headers = {"Authorization": f"Bearer {token}"}
+
+                                import httpx
+                                with open(pdf_path, 'rb') as f:
+                                    files = {'file': ('translated.pdf', f, 'application/pdf')}
+                                    resp = httpx.post(
+                                        "https://open.feishu.cn/open-apis/im/v1/files",
+                                        headers=headers,
+                                        files=files,
+                                        timeout=60
+                                    )
+                                    if resp.status_code == 200:
+                                        file_info = resp.json()
+                                        file_key = file_info.get('data', {}).get('file_key')
+                                        if file_key:
+                                            # 发送文件消息
+                                            content = json.dumps({"file_key": file_key})
+                                            self._feishu_bot.send_message_to_chat(
+                                                chat_id, "file", {"file_key": file_key}
+                                            )
+                                            logger.info(f"PDF 文件已发送: {pdf_path}")
+                            except Exception as e:
+                                logger.error(f"发送 PDF 文件失败: {e}")
             else:
                 # 翻译失败
                 error_msg = result.get("error", result.get("message", "未知错误"))

@@ -5,6 +5,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from src.qa.knowledge_base import KnowledgeBase
 from src.qa.embedding_service import EmbeddingService
 from src.qa.config import QAConfig

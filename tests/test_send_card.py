@@ -92,6 +92,7 @@ print(f"文本消息发送结果: {result}")
 # 测试带反馈按钮的卡片消息
 print("\n测试发送卡片消息...")
 import httpx
+import json
 token = bot.get_tenant_access_token()
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
 resp = httpx.post(
@@ -100,7 +101,7 @@ resp = httpx.post(
     json={
         "receive_id": chat_id,
         "msg_type": "interactive",
-        "content": card
+        "content": json.dumps(card)  # 转为 JSON 字符串
     },
     timeout=30
 )

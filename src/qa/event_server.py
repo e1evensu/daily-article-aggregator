@@ -1220,29 +1220,44 @@ class FeishuEventServer:
                     "retry_after": rate_result.reset_after,
                 }
         
-        # 检查是否是翻译命令
-        if self._pdf_translation_service and self._feishu_bot:
-            # 检测翻译命令
-            question_lower = question.lower().strip()
-            if question_lower.startswith('翻译 ') or question_lower.startswith('translate '):
-                # 提取要翻译的内容
-                target = question.split(' ', 1)[-1].strip()
-                if not target:
-                    self._send_reply(
-                        message="请提供要翻译的内容，例如：翻译 2501.12345 或 翻译 https://arxiv.org/abs/2501.12345",
-                        chat_id=chat_id,
-                        sender_id=sender_id,
-                        is_private=is_private
-                    )
-                    return {"success": True, "answer": "需要提供翻译目标"}
+        # 检查是否是翻译命令（不需要 PDF 服务存在也能进入分支）
+        question_lower = question.lower().strip()
+        if question_lower.startswith('翻译 ') or question_lower.startswith('translate '):
+            logger.info(f"Detected translation command: {question}")
 
-                # 处理翻译请求（在后台运行）
-                threading.Thread(
-                    target=self._handle_pdf_translation,
-                    args=(target, chat_id, sender_id, is_private),
-                    daemon=True
-                ).start()
-                return {"success": True, "answer": "翻译请求已提交，请稍候..."}
+            # 检查 PDF 翻译服务是否可用
+            if not self._pdf_translation_service:
+                logger.warning("PDF translation service not configured")
+                self._send_reply(
+                    message="PDF 翻译服务未启用，请在配置中启用 pdf_translation",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    is_private=is_private
+                )
+                return {"success": False, "error": "PDF translation service not configured"}
+
+            if not self._feishu_bot:
+                logger.warning("Feishu bot not configured, cannot process translation")
+                return {"success": False, "error": "Feishu bot not configured"}
+
+            # 提取要翻译的内容
+            target = question.split(' ', 1)[-1].strip()
+            if not target:
+                self._send_reply(
+                    message="请提供要翻译的内容，例如：翻译 2501.12345 或 翻译 https://arxiv.org/abs/2501.12345",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    is_private=is_private
+                )
+                return {"success": True, "answer": "需要提供翻译目标"}
+
+            # 处理翻译请求（在后台运行）
+            threading.Thread(
+                target=self._handle_pdf_translation,
+                args=(target, chat_id, sender_id, is_private),
+                daemon=True
+            ).start()
+            return {"success": True, "answer": "翻译请求已提交，请稍候..."}
 
         # 调用 QAEngine 处理问答
         try:

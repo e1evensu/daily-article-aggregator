@@ -93,12 +93,11 @@ print(f"文本消息发送结果: {result}")
 print("\n测试发送卡片消息...")
 import httpx
 token = bot.get_tenant_access_token()
-headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
 resp = httpx.post(
-    "https://open.feishu.cn/open-apis/im/v1/messages",
+    "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
     headers=headers,
     json={
-        "receive_id_type": "chat_id",
         "receive_id": chat_id,
         "msg_type": "interactive",
         "content": card

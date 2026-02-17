@@ -672,10 +672,10 @@ class Scheduler:
                 logger.info("Step 2: Fetching articles from RSS feeds...")
                 try:
                     rss_fetcher = components['rss_fetcher']
-                    opml_path = rss_fetcher.opml_path
-                    
-                    if opml_path and Path(opml_path).exists():
-                        all_urls = rss_fetcher.parse_opml(opml_path)
+
+                    # 使用预加载的所有 RSS URL（包括 opml_files 中的国内安全源）
+                    all_urls = rss_fetcher.get_all_feed_urls()
+                    if all_urls:
                         
                         # 使用断点续传
                         if checkpoint_manager:
@@ -745,7 +745,7 @@ class Scheduler:
                         
                         logger.info(f"RSS抓取完成，共 {len(all_articles)} 篇新文章")
                     else:
-                        logger.warning(f"OPML file not found: {opml_path}")
+                        logger.warning("没有加载到任何 RSS 订阅源")
                 except Exception as e:
                     logger.error(f"Error fetching RSS articles: {e}")
                     fetch_errors.append({'source': 'RSS', 'error': str(e)})

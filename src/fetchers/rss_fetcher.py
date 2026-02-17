@@ -67,10 +67,38 @@ class RSSFetcher:
             >>> fetcher = RSSFetcher(config)
         """
         self.opml_path: str = config.get('opml_path', '')
+        self.opml_files: list[str] = config.get('opml_files', [])  # 额外的 OPML 文件列表
         self.proxy: str | None = config.get('proxy')
         self.max_workers: int = config.get('max_workers', 5)
         self.timeout: int = config.get('timeout', 30)
-    
+
+        # 如果有额外的 opml_files，合并所有 URL
+        self._all_opml_urls: list[str] = []
+        if self.opml_path:
+            self._all_opml_urls.extend(self._parse_opml_urls(self.opml_path))
+        for opml_file in self.opml_files:
+            if Path(opml_file).exists():
+                self._all_opml_urls.extend(self._parse_opml_urls(opml_file))
+            else:
+                logger.warning(f"OPML文件不存在: {opml_file}")
+        if self._all_opml_urls:
+            logger.info(f"共加载 {len(self._all_opml_urls)} 个 RSS 订阅源（主文件 + {len(self.opml_files)} 个额外文件）")
+
+    def _parse_opml_urls(self, opml_path: str) -> list[str]:
+        """解析 OPML 文件获取 URL 列表（内部方法）"""
+        try:
+            tree = ET.parse(opml_path)
+            root = tree.getroot()
+            urls: list[str] = []
+            for outline in root.iter('outline'):
+                xml_url = outline.get('xmlUrl')
+                if xml_url:
+                    urls.append(xml_url)
+            return urls
+        except Exception as e:
+            logger.error(f"解析 OPML 文件失败 {opml_path}: {e}")
+            return []
+
     def parse_opml(self, opml_path: str) -> list[str]:
         """
         解析OPML文件获取订阅源URL列表
@@ -98,18 +126,22 @@ class RSSFetcher:
         try:
             tree = ET.parse(opml_path)
             root = tree.getroot()
-            
+
             urls: list[str] = []
-            
+
             # 递归查找所有带有xmlUrl属性的outline元素
             # Recursively find all outline elements with xmlUrl attribute
             for outline in root.iter('outline'):
                 xml_url = outline.get('xmlUrl')
                 if xml_url:
                     urls.append(xml_url)
-            
+
             logger.info(f"从OPML文件 {opml_path} 解析出 {len(urls)} 个订阅源")
             return urls
+
+    def get_all_feed_urls(self) -> list[str]:
+        """获取所有加载的 RSS 订阅源 URL（包括 opml_path 和 opml_files）"""
+        return self._all_opml_urls.copy()
             
         except FileNotFoundError:
             logger.error(f"OPML文件不存在: {opml_path}")

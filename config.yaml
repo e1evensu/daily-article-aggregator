@@ -150,6 +150,8 @@ tiered_push:
   level1_threshold: 0.1
   level2_threshold: 0.3
   level3_threshold: 0.6
+  use_interactive_card: true  # 使用交互式卡片（带反馈按钮）
+  level3_threshold: 0.6
 smart_selector:
   enabled: true
   max_articles: 100

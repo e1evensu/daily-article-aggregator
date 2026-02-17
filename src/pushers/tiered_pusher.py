@@ -43,17 +43,18 @@ class TieredPusher:
     """分级推送器"""
     
     def __init__(
-        self, 
-        config: dict[str, Any], 
+        self,
+        config: dict[str, Any],
         feishu_bot: Any = None,
         ai_analyzer: Any = None
     ):
         self.level1_threshold: float = config.get('level1_threshold', 0.10)
         self.level2_threshold: float = config.get('level2_threshold', 0.30)
         self.level3_threshold: float = config.get('level3_threshold', 0.60)
+        self.use_interactive_card: bool = config.get('use_interactive_card', True)
         self.feishu_bot = feishu_bot
         self.ai_analyzer = ai_analyzer
-        logger.info(f"TieredPusher initialized: L1={self.level1_threshold:.0%}, L2={self.level2_threshold:.0%}, L3={self.level3_threshold:.0%}")
+        logger.info(f"TieredPusher initialized: L1={self.level1_threshold:.0%}, L2={self.level2_threshold:.0%}, L3={self.level3_threshold:.0%}, use_interactive_card={self.use_interactive_card}")
 
     def categorize_articles(
         self,
@@ -252,37 +253,299 @@ class TieredPusher:
         return '\n'.join(sections)
 
     def push_tiered(
-        self, 
+        self,
         tiered_articles: dict[PushLevel, list[TieredArticle]]
     ) -> bool:
-        """分级推送到飞书（单条富文本消息）"""
+        """分级推送到飞书（支持交互式卡片消息带反馈按钮）"""
         if not self.feishu_bot:
             logger.warning("No feishu_bot configured, skipping push")
             return False
-        
+
         # 检查是否有文章
         total = sum(len(v) for v in tiered_articles.values())
         if total == 0:
             logger.info("No articles to push")
             return True
-        
-        # 构建富文本内容
-        content = self._build_rich_text_content(tiered_articles)
-        
-        # 构建标题
-        header = self._build_statistics_header(tiered_articles)
-        
-        # 发送单条富文本消息
-        logger.info(f"Sending tiered push: {total} articles in one message")
-        success = self.feishu_bot.send_rich_text(header, content)
-        
+
+        # 根据配置选择消息格式
+        if self.use_interactive_card:
+            # 使用交互式卡片消息（带反馈按钮）
+            card = self._build_tiered_card_with_feedback(tiered_articles)
+            logger.info(f"Sending tiered push: {total} articles with interactive card")
+            success = self.feishu_bot.send_interactive_card(card)
+        else:
+            # 使用富文本消息（无反馈按钮）
+            content = self._build_rich_text_content(tiered_articles)
+            header = self._build_statistics_header(tiered_articles)
+            logger.info(f"Sending tiered push: {total} articles with rich text")
+            success = self.feishu_bot.send_rich_text(header, content)
+
         if success:
             logger.info(f"Tiered push completed: {total} articles")
         else:
             logger.error("Tiered push failed")
-        
+
         return success
-    
+
+    def _build_tiered_card_with_feedback(
+        self,
+        tiered_articles: dict[PushLevel, list[TieredArticle]]
+    ) -> dict:
+        """
+        构建带反馈按钮的分级推送卡片
+
+        Args:
+            tiered_articles: 分级后的文章
+
+        Returns:
+            飞书交互式卡片 JSON
+        """
+        elements = []
+
+        # 统计信息头部
+        header = self._build_statistics_header(tiered_articles)
+        elements.append({
+            "tag": "markdown",
+            "content": f"**{header}**"
+        })
+
+        # Level 1 - 重点推荐
+        level1_articles = tiered_articles.get(PushLevel.LEVEL_1, [])
+        if level1_articles:
+            elements.append({
+                "tag": "markdown",
+                "content": "## 🔥 重点推荐"
+            })
+
+            for tiered in level1_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source = article.get('source', '')
+                source_type = article.get('source_type', '')
+                summary = (
+                    article.get('zh_summary', '') or
+                    article.get('summary', '') or
+                    article.get('short_description', '')
+                )
+                category = article.get('category', '')
+                keywords = article.get('keywords', [])
+                article_id = article.get('id', url)
+
+                # 截断过长的标题
+                if len(title) > 60:
+                    title = title[:57] + "..."
+
+                # 文章标题（带链接）
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"**📌 [{title}]({url})**"
+                })
+
+                # 来源信息
+                if source and source_type:
+                    source_display = f"[{source_type.upper()}] {source}"
+                elif source_type:
+                    source_display = source_type.upper()
+                elif source:
+                    source_display = source
+                else:
+                    source_display = ""
+
+                if source_display:
+                    elements.append({
+                        "tag": "markdown",
+                        "content": f"📰 来源: {source_display}"
+                    })
+
+                # 摘要
+                if summary:
+                    if len(summary) > 400:
+                        summary = summary[:397] + "..."
+                    elements.append({
+                        "tag": "markdown",
+                        "content": f"📝 {summary}"
+                    })
+
+                # 分类和关键词
+                info_parts = []
+                if category:
+                    info_parts.append(f"分类: {category}")
+                if keywords and isinstance(keywords, list):
+                    keywords_str = ', '.join(keywords[:3])
+                    if keywords_str:
+                        info_parts.append(f"关键词: {keywords_str}")
+
+                if info_parts:
+                    elements.append({
+                        "tag": "markdown",
+                        "content": " | ".join(info_parts)
+                    })
+
+                # 反馈按钮
+                elements.append({
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👍 有用"},
+                            "type": "primary",
+                            "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👎 没用"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⭐ 收藏"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
+                        }
+                    ]
+                })
+
+                # 分隔线
+                elements.append({"tag": "hr"})
+
+        # Level 2 - 值得关注
+        level2_articles = tiered_articles.get(PushLevel.LEVEL_2, [])
+        if level2_articles:
+            elements.append({
+                "tag": "markdown",
+                "content": "## ⭐ 值得关注"
+            })
+
+            for tiered in level2_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source_type = article.get('source_type', '')
+                summary = (
+                    article.get('zh_summary', '') or
+                    article.get('summary', '') or
+                    article.get('short_description', '')
+                )
+                article_id = article.get('id', url)
+
+                # 截断标题
+                if len(title) > 60:
+                    title = title[:57] + "..."
+
+                # 来源前缀
+                prefix = f"[{source_type.upper()}] " if source_type else ""
+
+                # 标题（带链接）
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"• {prefix}[{title}]({url})"
+                })
+
+                # 简短摘要
+                if summary:
+                    brief = summary[:100] + "..." if len(summary) > 100 else summary
+                    elements.append({
+                        "tag": "markdown",
+                        "content": f"  📝 {brief}"
+                    })
+
+                # 反馈按钮（精简版）
+                elements.append({
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👍 有用"},
+                            "type": "primary",
+                            "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👎 没用"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⭐ 收藏"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
+                        }
+                    ]
+                })
+
+                elements.append({"tag": "hr"})
+
+        # Level 3 - 其他文章
+        level3_articles = tiered_articles.get(PushLevel.LEVEL_3, [])
+        if level3_articles:
+            elements.append({
+                "tag": "markdown",
+                "content": "## 📋 其他文章"
+            })
+
+            for tiered in level3_articles:
+                article = tiered.article
+                title = article.get('title', 'Untitled')
+                url = article.get('url', '')
+                source_type = article.get('source_type', '')
+                article_id = article.get('id', url)
+
+                # 截断标题
+                if len(title) > 60:
+                    title = title[:57] + "..."
+
+                prefix = f"[{source_type.upper()}] " if source_type else ""
+
+                elements.append({
+                    "tag": "markdown",
+                    "content": f"- {prefix}[{title}]({url})"
+                })
+
+                # 反馈按钮（精简版）
+                elements.append({
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👍 有用"},
+                            "type": "primary",
+                            "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "👎 没用"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "⭐ 收藏"},
+                            "type": "default",
+                            "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
+                        }
+                    ]
+                })
+
+                elements.append({"tag": "hr"})
+
+        # 添加底部提示
+        elements.append({
+            "tag": "markdown",
+            "content": "💡 点击按钮即可反馈，无需输入命令"
+        })
+
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {
+                "title": {"tag": "plain_text", "content": "📚 今日文章推荐"},
+                "template": "blue"
+            },
+            "elements": elements
+        }
+
     def _build_rich_text_content(
         self, 
         tiered_articles: dict[PushLevel, list[TieredArticle]]

@@ -169,14 +169,18 @@ class Synthesis:
     id: str
     title: str
     cluster_id: str
+    content: str = ""  # 综述内容（合并版）
     background: str = ""
     impact_analysis: str = ""
     technical_details: str = ""
     mitigation: str = ""
+    key_points: list[str] = field(default_factory=list)  # 核心要点
     keywords: list[str] = field(default_factory=list)
     source_articles: list[Article] = field(default_factory=list)
     additional_sources: list[str] = field(default_factory=list)
+    references: list[dict] = field(default_factory=list)  # 参考来源
     created_at: datetime = field(default_factory=datetime.now)
+    generated_at: datetime = field(default_factory=datetime.now)  # 兼容字段
     published_at: datetime | None = None
     feishu_doc_url: str | None = None
     feishu_doc_token: str | None = None

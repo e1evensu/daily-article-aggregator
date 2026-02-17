@@ -84,7 +84,7 @@ card = {
     ]
 }
 
-# 发送消息
+# 发送消息 - 使用 send_message_to_chat
 print("发送消息到群聊...")
-result = bot.send_interactive_card(card, chat_id)
+result = bot.send_message_to_chat(chat_id, "interactive", card)
 print(f"发送结果: {result}")

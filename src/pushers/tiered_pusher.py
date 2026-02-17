@@ -382,29 +382,43 @@ class TieredPusher:
                         "content": " | ".join(info_parts)
                     })
 
-                # 反馈按钮
+                # 反馈按钮 + 翻译按钮
+                # 获取文章 URL
+                article_url = article.get('url', '')
+
+                actions = [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "👍 有用"},
+                        "type": "primary",
+                        "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "👎 没用"},
+                        "type": "default",
+                        "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "⭐ 收藏"},
+                        "type": "default",
+                        "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
+                    }
+                ]
+
+                # 如果有 URL，添加翻译按钮
+                if article_url:
+                    actions.append({
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "🌐 翻译"},
+                        "type": "default",
+                        "value": {"action": "translate", "url": article_url}
+                    })
+
                 elements.append({
                     "tag": "action",
-                    "actions": [
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "👍 有用"},
-                            "type": "primary",
-                            "value": {"action": "feedback", "rating": "useful", "article_id": article_id}
-                        },
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "👎 没用"},
-                            "type": "default",
-                            "value": {"action": "feedback", "rating": "not_useful", "article_id": article_id}
-                        },
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": "⭐ 收藏"},
-                            "type": "default",
-                            "value": {"action": "feedback", "rating": "bookmark", "article_id": article_id}
-                        }
-                    ]
+                    "actions": actions
                 })
 
                 # 分隔线

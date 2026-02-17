@@ -219,6 +219,14 @@ def run_server(
     # 设置 PDF 翻译服务
     logger.info("初始化 PDF 翻译服务...")
     pdf_config = config.get("pdf_translation", {})
+
+    # 添加飞书应用凭证（用于创建云文档）
+    feishu_config = config.get("feishu", {})
+    pdf_config["feishu"] = {
+        "app_id": feishu_config.get("app_id", ""),
+        "app_secret": feishu_config.get("app_secret", "")
+    }
+
     if pdf_config.get("enabled", False):
         pdf_translator = FeishuPDFTranslationService(pdf_config)
         server.set_pdf_translation_service(pdf_translator)

@@ -1,0 +1,300 @@
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.AI
+    - cs.CL
+    - cs.CR
+    keywords:
+    - security
+    - safety
+    - llm
+    use_llm_filter: false
+    max_results: 1000
+  rss:
+    enabled: true
+    opml_path: reports/filtered_feeds.opml
+    max_workers: 30
+    timeout: 10
+    opml_files:
+    - rss/CyberSecurityRSS.opml
+    - rss/Chinese-Security-RSS.opml
+    - rss/awesome-security-feed.opml
+    - rss/chinese-independent-blogs.opml
+    - rss/SecureRss.opml
+    - rss/wechatRSS.opml
+    - rss/hn-popular-blogs-2025.opml
+    - rss/hn-top-blogs.opml
+ai:
+  enabled: true
+  api_base: ${OPENAI_API_BASE:https://api.openai.com/v1}
+  api_key: ${OPENAI_API_KEY}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  embedding_model: BAAI/bge-large-zh-v1.5
+  max_tokens: 200000
+  temperature: 0.7
+  timeout: 60
+  translate: true
+  system_prompt: '你是一名专业的技术文档分析师，擅长阅读和总结技术文章。
+
+    你的任务是：
+
+    1. 提取文章的核心观点和关键信息
+
+    2. 生成简洁准确的中文摘要
+
+    3. 为文章分配合适的技术分类
+
+
+    请确保摘要简洁明了，突出文章的主要贡献和价值。
+
+    '
+feishu:
+  webhook_url: ${FEISHU_WEBHOOK_URL}
+feishu_bitable:
+  enabled: true
+  app_id: ${FEISHU_APP_ID}
+  app_secret: ${FEISHU_APP_SECRET}
+  app_token: ${FEISHU_BITABLE_APP_TOKEN:}
+  table_id: ${FEISHU_BITABLE_TABLE_ID:}
+proxy:
+  url: ''
+  enabled: false
+schedule:
+  time: 07:00
+  timezone: Asia/Shanghai
+checkpoint:
+  enabled: true
+  dir: data/checkpoints
+  max_age_hours: 24
+  save_interval: 10
+database:
+  path: data/articles.db
+content:
+  max_length: 5000000
+  truncation_marker: '
+
+
+    ... [内容已截断]'
+data_sources:
+  dblp:
+    enabled: true
+    conferences:
+    - sp
+    - ccs
+    - uss
+    - ndss
+    timeout: 30
+  nvd:
+    enabled: true
+    api_key: ${NVD_API_KEY:}
+    days_back: 7
+    timeout: 60
+    min_cvss_score: 7.0
+  kev:
+    enabled: true
+    days_back: 30
+    timeout: 30
+  huggingface:
+    enabled: true
+    timeout: 30
+  pwc:
+    enabled: true
+    limit: 50
+    timeout: 30
+  blogs:
+    enabled: true
+    sources:
+    - openai
+    - deepmind
+    - anthropic
+    timeout: 30
+  hunyuan:
+    enabled: true
+    timeout: 30
+    days_back: 7
+    page_size: 20
+  github:
+    enabled: true
+    token: ${GITHUB_TOKEN:}
+    topics:
+    - security
+    - llm
+    - ai
+    - machine-learning
+    - cybersecurity
+    min_stars: 100
+    days_back: 7
+    max_results: 50
+    timeout: 30
+  anthropic_red:
+    enabled: true
+    timeout: 30
+  atum_blog:
+    enabled: true
+    timeout: 30
+    days_back: 365
+vulnerability_filter:
+  enabled: true
+  github_star_threshold: 1000
+  ip_asset_threshold: 300
+  enable_ai_assessment: true
+  github_token: ${GITHUB_TOKEN:}
+tiered_push:
+  enabled: true
+  level1_threshold: 0.1
+  level2_threshold: 0.3
+  level3_threshold: 0.6
+smart_selector:
+  enabled: true
+  max_articles: 100
+  min_quality_score: 50
+  source_balance: true
+  enable_realtime_scoring: true
+  scoring_threshold: 40
+ai_scorer:
+  enabled: true
+  batch_size: 10
+  timeout: 60
+  api_base: ${OPENAI_API_BASE:https://api.openai.com/v1}
+  api_key: ${OPENAI_API_KEY}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  weights:
+    relevance: 0.4
+    quality: 0.35
+    timeliness: 0.25
+priority_scoring:
+  enabled: true
+  source_weights:
+    kev: 1.5
+    nvd: 1.2
+    dblp: 1.3
+    huggingface: 1.1
+    pwc: 1.1
+    blog: 1.0
+    arxiv: 1.0
+    rss: 0.8
+knowledge_qa:
+  enabled: true
+  chroma:
+    path: data/chroma_db
+    collection_name: knowledge_articles
+  embedding:
+    model: Qwen/Qwen3-Embedding-8B
+  event_server:
+    host: 0.0.0.0
+    port: 8080
+    verification_token: ${FEISHU_VERIFICATION_TOKEN}
+    encrypt_key: ${FEISHU_ENCRYPT_KEY:}
+  qa:
+    max_context_turns: 5
+    context_ttl_minutes: 30
+    max_retrieved_docs: 5
+    min_relevance_score: 0.5
+    answer_max_length: 40000
+  chunking:
+    chunk_size: 500
+    chunk_overlap: 50
+  rate_limit:
+    requests_per_minute: 20
+    requests_per_user_minute: 5
+topic_aggregation:
+  enabled: true
+  similarity_threshold: 0.7
+  aggregation_threshold: 3
+  time_window_days: 7
+  title_weight: 0.6
+  keyword_weight: 0.4
+  use_ai_similarity: true
+  embedding_model: BAAI/bge-large-zh-v1.5
+  blacklist_domains:
+  - csdn.net
+  - zhihu.com
+  - jianshu.com
+  - blog.51cto.com
+  trusted_sources:
+  - arxiv.org
+  - github.com
+  - openai.com
+  - anthropic.com
+  - deepmind.com
+rag_enhancement:
+  enabled: true
+  similarity_threshold: 0.5
+  max_chunks_per_doc: 3
+  max_history_turns: 5
+  dedup_threshold: 0.95
+feishu_interactive:
+  enabled: true
+  app_id: ${FEISHU_APP_ID}
+  app_secret: ${FEISHU_APP_SECRET}
+  event_server:
+    host: 0.0.0.0
+    port: 8080
+    verification_token: ${FEISHU_VERIFICATION_TOKEN}
+    encrypt_key: ${FEISHU_ENCRYPT_KEY:}
+  message_handling:
+    always_respond: false
+    thread_replies: true
+    low_confidence_threshold: 0.5
+    low_confidence_message: ⚠️ 以下回答置信度较低，仅供参考：
+    max_sources: 5
+  deduplication:
+    max_size: 10000
+    ttl_seconds: 300
+stats_system:
+  enabled: true
+  db_path: data/stats.db
+  page_views:
+    dedup_window_seconds: 300
+  qa_stats:
+    track_queries: true
+    track_sources: true
+  source_quality:
+    min_fetch_count: 10
+    low_quality_threshold: 30
+  topic_tracking:
+    enabled: true
+    min_keyword_length: 2
+    max_keywords_per_article: 10
+    spike_threshold: 2.0
+    use_jieba: true
+  api:
+    cache_ttl_seconds: 300
+    max_results: 100
+feedback:
+  enabled: true
+  db_path: data/articles.db
+  prompt_message: '💡 反馈命令：
+
+    • "有用" / "没用" - 快速反馈
+
+    • "收藏" - 收藏此文章
+
+    • "更多类似" - 推荐更多同类文章
+
+    '
+pdf_translation:
+  enabled: true
+  input_dir: data/papers/input
+  output_dir: data/papers/output
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY:}
+    base_url: https://api.deepseek.com
+    model: deepseek-chat
+  siliconflow:
+    api_key: ${SILICONFLOW_API_KEY:}
+    base_url: https://api.siliconflow.cn/v1
+  feishu:
+    notify_on_complete: true
+    send_to_group: true
+  translation_style: academic
+sitemap_importer:
+  enabled: true
+  timeout: 30
+  user_agent: PandaWiki-SitemapImporter/1.0
+  max_concurrent: 5
+  delay_between_requests: 0.5
+  state_dir: data/sitemap_state
+  source_type: sitemap
+  sitemaps: []

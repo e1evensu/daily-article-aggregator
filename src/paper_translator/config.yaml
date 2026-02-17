@@ -1,0 +1,29 @@
+# 论文翻译系统配置
+
+# API配置
+# DeepSeek API (翻译文本)
+DEEPSEEK_API_KEY: ""
+DEEPSEEK_BASE_URL: "https://api.deepseek.com"
+DEEPSEEK_MODEL: "deepseek-chat"
+
+# SiliconFlow API (图表理解)
+SILICONFLOW_API_KEY: ""
+SILICONFLOW_BASE_URL: "https://api.siliconflow.cn/v1"
+
+# 输入输出配置
+INPUT_PDF_DIR: "input_papers"      # 放置待翻译的PDF
+OUTPUT_DIR: "translated_papers"     # 翻译后的PDF输出目录
+
+# 处理配置
+BATCH_SIZE: 5                      # 批量处理数量
+MAX_WORKERS: 3                     # 并行工作数
+TIMEOUT: 120                       # 单个任务超时(秒)
+
+# 翻译配置
+TRANSLATION_STYLE: "academic"      # academic(学术风格) / casual(通俗风格)
+ADD_TERMINOLOGY: true              # 是否添加术语解释
+ADD_FORMULA_EXPLANATION: true      # 是否添加公式解释
+ADD_FIGURE_DESCRIPTION: true       # 是否添加图表描述
+
+# 术语库配置
+TERMINOLOGY_DB_PATH: "data/terminology.db"

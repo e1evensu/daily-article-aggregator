@@ -1,0 +1,24 @@
+# 论文翻译系统依赖
+
+# 核心依赖
+PyYAML>=6.0
+
+# PDF处理
+pdfplumber>=0.10.0
+reportlab>=4.0.0
+
+# OpenAI API客户端
+openai>=1.0.0
+
+# HTTP请求（用于SiliconFlow API）
+requests>=2.31.0
+
+# MinerU (可选，用于更精确的PDF解析)
+# magicoder>=0.1.0
+# 或者使用 pdf2image + pytesseract 作为替代
+# pdf2image>=1.16.0
+# pytesseract>=0.3.10
+
+# 术语库 (可选)
+# chromadb>=0.4.0
+# sentence-transformers>=2.2.0

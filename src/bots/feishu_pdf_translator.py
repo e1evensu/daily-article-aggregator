@@ -284,17 +284,37 @@ class FeishuPDFTranslationService:
 
     def _fetch_webpage(self, url: str) -> Optional[dict]:
         """获取网页内容"""
+        import time
+
         try:
             from bs4 import BeautifulSoup
 
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            }
+            # 尝试多次
+            for attempt in range(3):
+                try:
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Connection': 'keep-alive',
+                    }
 
-            response = requests.get(url, headers=headers, timeout=30)
-            response.encoding = response.apparent_encoding or 'utf-8'
+                    response = requests.get(url, headers=headers, timeout=60, allow_redirects=True)
+                    response.raise_for_status()
+                    response.encoding = response.apparent_encoding or 'utf-8'
+                    break
+
+                except Exception as e:
+                    if attempt < 2:
+                        logger.warning(f"获取网页失败 (尝试 {attempt+1}/3): {e}")
+                        time.sleep(2)
+                    else:
+                        raise
+
+            # 如果所有尝试都失败
+            if not response:
+                logger.error(f"获取网页内容失败: {url}")
+                return None
 
             soup = BeautifulSoup(response.text, 'html.parser')
 

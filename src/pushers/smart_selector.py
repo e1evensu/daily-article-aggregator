@@ -86,9 +86,9 @@ class SmartSelector:
         filtered = self._filter_by_quality(articles, article_scores)
         logger.info(f"质量过滤后: {len(filtered)}/{len(articles)} 篇")
         
-        # 第二步：来源平衡
+        # 第二步：来源平衡（按分数排序后取每个来源的高分文章）
         if self.source_balance:
-            filtered = self._balance_sources(filtered)
+            filtered = self._balance_sources(filtered, article_scores)
             logger.info(f"来源平衡后: {len(filtered)} 篇")
         
         # 第三步：去除重复/相似内容
@@ -168,10 +168,14 @@ class SmartSelector:
         return result
     
     def _balance_sources(
-        self, 
-        articles: List[Dict[str, Any]]
+        self,
+        articles: List[Dict[str, Any]],
+        scores: Dict[str, int] = None
     ) -> List[Dict[str, Any]]:
-        """平衡不同来源的文章"""
+        """平衡不同来源的文章（按分数排序）"""
+        if scores is None:
+            scores = {}
+
         # 按来源分组
         by_source: Dict[str, List[dict]] = {}
         for article in articles:
@@ -179,24 +183,33 @@ class SmartSelector:
             if source_type not in by_source:
                 by_source[source_type] = []
             by_source[source_type].append(article)
-        
+
         # 每个来源的配额
         source_quotas = {
-            'kev': 10,      # KEV 漏洞（重要）
-            'nvd': 5,       # NVD 高危漏洞
-            'dblp': 10,     # 顶会论文
-            'arxiv': 10,    # arXiv 论文
-            'rss': 15,      # RSS 订阅
-            'huggingface': 5,
-            'pwc': 5,
-            'blog': 5,
+            'kev': 15,      # KEV 漏洞（重要）
+            'nvd': 10,      # NVD 高危漏洞
+            'dblp': 15,     # 顶会论文
+            'arxiv': 15,    # arXiv 论文
+            'rss': 30,      # RSS 订阅
+            'huggingface': 10,
+            'pwc': 10,
+            'blog': 10,
+            'github': 10,
+            'anthropic_red': 5,
+            'atum_blog': 5,
         }
-        
+
         result = []
         for source_type, source_articles in by_source.items():
-            quota = source_quotas.get(source_type, 5)
-            result.extend(source_articles[:quota])
-        
+            # 按分数排序
+            sorted_articles = sorted(
+                source_articles,
+                key=lambda a: scores.get(a.get('url', ''), a.get('score', 50)),
+                reverse=True
+            )
+            quota = source_quotas.get(source_type, 10)
+            result.extend(sorted_articles[:quota])
+
         return result
     
     def _remove_duplicates(

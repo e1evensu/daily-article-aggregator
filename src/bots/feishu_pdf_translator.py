@@ -59,14 +59,8 @@ class FeishuPDFTranslationService:
         """获取文本翻译器（用于网页翻译）"""
         if self._text_translator is None:
             from src.paper_translator.paper_translator.translation_engine import TranslationEngine
-            # 使用与 PDF 翻译相同的配置
-            provider = 'minimax'
-            self._text_translator = TranslationEngine(
-                provider=provider,
-                api_key=self.config.get('minimax', {}).get('api_key'),
-                base_url=self.config.get('minimax', {}).get('base_url'),
-                model=self.config.get('minimax', {}).get('model', 'MiniMax-Text-01')
-            )
+            # TranslationEngine 使用全局配置
+            self._text_translator = TranslationEngine()
         return self._text_translator
 
     def _get_doc_publisher(self):

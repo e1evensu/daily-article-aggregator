@@ -111,7 +111,7 @@ class KnowledgeRSSGenerator:
             description += "..."
         
         item = RSSItem(
-            item_id=synthesis.synthesis_id,
+            item_id=synthesis.id,
             title=synthesis.title,
             link=doc_url or self.feed_link,
             description=description,

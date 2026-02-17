@@ -580,7 +580,7 @@ class FeishuDocPublisher:
         if success and doc_url:
             return PublishResult(
                 success=True,
-                synthesis_id=synthesis.synthesis_id,
+                synthesis_id=synthesis.id,
                 document_url=doc_url,
                 published_at=datetime.now()
             )
@@ -590,7 +590,7 @@ class FeishuDocPublisher:
         
         return PublishResult(
             success=False,
-            synthesis_id=synthesis.synthesis_id,
+            synthesis_id=synthesis.id,
             document_url=None,
             error_message=f"发布失败，已保存本地备份: {backup_path}",
             published_at=datetime.now()

@@ -32,7 +32,6 @@ sys.path.insert(0, str(project_root))
 from src.config import load_config
 from src.repository import ArticleRepository
 from src.qa.knowledge_base import KnowledgeBase
-from src.qa.config import ChromaConfig
 
 # 配置日志
 logging.basicConfig(
@@ -66,9 +65,7 @@ def sync_knowledge_base(
     config = load_config()
     
     # 初始化知识库
-    kb_config = ChromaConfig.from_dict(
-        config.get("knowledge_qa", {}).get("chroma", {})
-    )
+    kb_config = config.get("knowledge_qa", {}).get("chroma", {})
     knowledge_base = KnowledgeBase(kb_config)
     
     # 获取当前知识库统计

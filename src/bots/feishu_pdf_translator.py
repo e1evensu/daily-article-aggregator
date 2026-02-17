@@ -49,6 +49,23 @@ class FeishuPDFTranslationService:
         # 飞书配置
         self.feishu_config = config.get('feishu', {})
 
+        # 缓存翻译文本的对象（用于网页翻译）
+        self._text_translator = None
+
+    def _get_text_translator(self):
+        """获取文本翻译器（用于网页翻译）"""
+        if self._text_translator is None:
+            from src.paper_translator.paper_translator.translation_engine import TranslationEngine
+            # 使用与 PDF 翻译相同的配置
+            provider = 'minimax'
+            self._text_translator = TranslationEngine(
+                provider=provider,
+                api_key=self.config.get('minimax', {}).get('api_key'),
+                base_url=self.config.get('minimax', {}).get('base_url'),
+                model=self.config.get('minimax', {}).get('model', 'MiniMax-Text-01')
+            )
+        return self._text_translator
+
         logger.info(f"FeishuPDFTranslationService initialized: enabled={self.enabled}")
 
     def _init_translator(self):
@@ -103,13 +120,14 @@ class FeishuPDFTranslationService:
                 'message': 'PDF翻译服务未启用'
             }
 
-        logger.info(f"开始处理PDF: {pdf_url}")
+        logger.info(f"开始处理: {pdf_url}")
         start_time = time.time()
 
         try:
-            # 0. 处理纯 arXiv ID（如 2501.12345）转换为 URL
+            # 0. 处理输入，判断是 PDF 还是网页
             cleaned_url = pdf_url.strip()
-            # 检查是否是纯 arXiv ID（如 2501.12345 或 arxiv:2501.12345）
+
+            # 检查是否是纯 arXiv ID（如 2501.12345）
             import re
             if re.match(r'^\d{4}\.\d{4,5}$', cleaned_url):
                 # 转换为 arXiv PDF URL
@@ -119,14 +137,22 @@ class FeishuPDFTranslationService:
                 arxiv_id = cleaned_url[6:].strip()
                 cleaned_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
                 logger.info(f"已将 arXiv ID 转换为 PDF URL: {cleaned_url}")
+            elif cleaned_url.startswith('http://') or cleaned_url.startswith('https://'):
+                # 是 HTTP URL，检查是 PDF 还是网页
+                if '.pdf' in cleaned_url.lower() or '/pdf/' in cleaned_url.lower():
+                    # PDF URL
+                    pass
+                else:
+                    # 网页 URL，使用网页翻译
+                    logger.info(f"检测为网页 URL，使用网页翻译: {cleaned_url}")
+                    return self._translate_webpage(cleaned_url)
 
             # 1. 下载PDF
             pdf_path = self._download_pdf(cleaned_url)
             if not pdf_path:
-                return {
-                    'success': False,
-                    'message': '下载PDF失败'
-                }
+                # 下载失败，尝试作为网页处理
+                logger.info("PDF 下载失败，尝试作为网页处理")
+                return self._translate_webpage(cleaned_url)
 
             logger.info(f"PDF下载成功: {pdf_path}")
 
@@ -186,6 +212,110 @@ class FeishuPDFTranslationService:
         except Exception as e:
             logger.error(f"下载PDF失败: {e}")
             return None
+
+    def _fetch_webpage(self, url: str) -> Optional[dict]:
+        """获取网页内容"""
+        try:
+            from bs4 import BeautifulSoup
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            }
+
+            response = requests.get(url, headers=headers, timeout=30)
+            response.encoding = response.apparent_encoding or 'utf-8'
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # 移除脚本和样式
+            for script in soup(['script', 'style', 'nav', 'footer', 'header']):
+                script.decompose()
+
+            # 获取标题
+            title = soup.title.string if soup.title else ''
+            if not title:
+                title = soup.find('h1')
+                title = title.get_text(strip=True) if title else url
+
+            # 获取主要内容
+            content = soup.find('article') or soup.find('main') or soup.find('div', class_=lambda x: x and 'content' in x.lower())
+            if content:
+                text = content.get_text(separator='\n', strip=True)
+            else:
+                text = soup.get_text(separator='\n', strip=True)
+
+            # 限制文本长度
+            max_length = 50000
+            if len(text) > max_length:
+                text = text[:max_length] + '\n\n... [内容已截断]'
+
+            logger.info(f"网页获取成功: {url}, 标题: {title}, 内容长度: {len(text)}")
+            return {
+                'title': title,
+                'content': text,
+                'url': url
+            }
+
+        except Exception as e:
+            logger.error(f"获取网页失败: {e}")
+            return None
+
+    def _translate_webpage(self, url: str) -> dict:
+        """翻译网页内容"""
+        logger.info(f"开始翻译网页: {url}")
+
+        # 获取网页内容
+        webpage = self._fetch_webpage(url)
+        if not webpage:
+            return {
+                'success': False,
+                'message': '获取网页内容失败'
+            }
+
+        # 翻译标题
+        translator = self._get_text_translator()
+        try:
+            title_translated = translator.translate_text(
+                f"请翻译以下标题为中文：{webpage['title']}",
+                style="casual"
+            )
+            # 提取翻译后的标题
+            if '翻译：' in title_translated:
+                title_translated = title_translated.split('翻译：')[-1].strip()
+        except Exception as e:
+            logger.warning(f"标题翻译失败: {e}")
+            title_translated = webpage['title']
+
+        # 翻译内容（分段处理）
+        content = webpage['content']
+        max_chunk = 8000
+        chunks = [content[i:i+max_chunk] for i in range(0, len(content), max_chunk)]
+
+        translated_chunks = []
+        for i, chunk in enumerate(chunks):
+            logger.info(f"翻译网页内容 chunk {i+1}/{len(chunks)}")
+            try:
+                translated = translator.translate_text(
+                    f"请将以下内容翻译成中文，保持原文格式：\n\n{chunk}",
+                    style="casual"
+                )
+                translated_chunks.append(translated)
+            except Exception as e:
+                logger.warning(f"内容翻译失败 chunk {i+1}: {e}")
+                translated_chunks.append(chunk)
+
+        translated_content = '\n\n'.join(translated_chunks)
+
+        return {
+            'success': True,
+            'message': '网页翻译完成',
+            'title': webpage['title'],
+            'title_translated': title_translated,
+            'content': translated_content,
+            'url': url
+        }
 
     def _send_to_feishu(
         self,

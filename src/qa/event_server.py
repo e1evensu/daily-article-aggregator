@@ -1420,21 +1420,49 @@ class FeishuEventServer:
                 is_private=is_private
             )
 
-            # 调用 PDF 翻译服务
+            # 调用 PDF/网页翻译服务
             result = self._pdf_translation_service.process_pdf_link(target)
 
             if result.get("success"):
-                # 翻译成功，发送完成消息
-                message = f"翻译完成！\n\n{result.get('message', '请查看上方的文件')}"
-                self._send_reply(
-                    message=message,
-                    chat_id=chat_id,
-                    sender_id=sender_id,
-                    is_private=is_private
-                )
+                # 检查是否是网页翻译结果
+                if 'content' in result and 'title_translated' in result:
+                    # 网页翻译结果
+                    title = result.get('title', '未知标题')
+                    title_translated = result.get('title_translated', title)
+                    content = result.get('content', '')
+                    url = result.get('url', target)
+
+                    # 发送标题翻译
+                    message = f"🌐 网页翻译完成\n\n"
+                    message += f"📰 原文标题: {title}\n"
+                    message += f"📰 中文标题: {title_translated}\n"
+                    message += f"🔗 原文链接: {url}\n\n"
+                    message += "---\n\n"
+
+                    # 分段发送内容（飞书消息有长度限制）
+                    max_len = 1500
+                    for i in range(0, len(content), max_len):
+                        chunk = content[i:i+max_len]
+                        self._send_reply(
+                            message=message + chunk,
+                            chat_id=chat_id,
+                            sender_id=sender_id,
+                            is_private=is_private
+                        )
+                        message = ""  # 后续消息不需要标题
+                        time.sleep(0.5)  # 避免发送太快
+                else:
+                    # PDF 翻译结果
+                    message = f"翻译完成！\n\n{result.get('message', '请查看上方的文件')}"
+                    self._send_reply(
+                        message=message,
+                        chat_id=chat_id,
+                        sender_id=sender_id,
+                        is_private=is_private
+                    )
             else:
                 # 翻译失败
-                error_msg = result.get("error", "未知错误")
+                error_msg = result.get("error", result.get("message", "未知错误"))
                 self._send_reply(
                     message=f"翻译失败: {error_msg}",
                     chat_id=chat_id,

@@ -2,6 +2,17 @@
 
 from openai import OpenAI
 import os
+from pathlib import Path
+
+# 加载环境变量
+env_file = Path(__file__).parent.parent / ".env"
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key, value)
 
 
 def test_siliconflow_api():

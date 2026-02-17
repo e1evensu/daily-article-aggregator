@@ -1,0 +1,29 @@
+"""
+测试知识库检索
+"""
+from src.qa.knowledge_base import KnowledgeBase
+from src.qa.embedding_service import EmbeddingService
+from src.qa.config import QAConfig
+import yaml
+
+
+def test_knowledge_base_retrieve():
+    with open('config.yaml') as f:
+        config = yaml.safe_load(f)
+
+    qa_config = QAConfig.from_dict(config.get('knowledge_qa', {}))
+    kb = KnowledgeBase(qa_config.knowledge_base)
+
+    embedding_config = config.get('knowledge_qa', {}).get('embedding', {})
+    es = EmbeddingService(embedding_config)
+    kb.set_embedding_service(es)
+
+    stats = kb.get_stats()
+    print('知识库统计:', stats)
+
+    results = kb.retrieve('先知 补天', n_results=5)
+    print('检索结果:', results)
+
+
+if __name__ == '__main__':
+    test_knowledge_base_retrieve()

@@ -150,8 +150,8 @@ class SynthesisGenerator:
             return "综述"
         
         # 如果有关键词，使用关键词生成标题
-        if cluster.keywords:
-            keywords_str = "、".join(cluster.keywords[:3])
+        if cluster.topic_keywords:
+            keywords_str = "、".join(cluster.topic_keywords[:3])
             return f"关于「{keywords_str}」的综述"
         
         # 否则使用第一篇文章的标题
@@ -354,8 +354,8 @@ class SynthesisGenerator:
         sections.append(f"# {title}")
         
         # 关键词
-        if cluster.keywords:
-            keywords_str = "、".join(cluster.keywords)
+        if cluster.topic_keywords:
+            keywords_str = "、".join(cluster.topic_keywords)
             sections.append(f"**关键词**: {keywords_str}")
         
         # 文章列表

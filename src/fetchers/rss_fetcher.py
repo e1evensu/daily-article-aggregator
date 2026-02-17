@@ -151,7 +151,10 @@ class RSSFetcher:
             if feed.bozo and feed.bozo_exception:
                 # bozo表示解析时遇到问题，但可能仍有部分数据
                 # bozo indicates parsing issues, but may still have partial data
-                logger.warning(f"订阅源 {url} 解析警告: {feed.bozo_exception}")
+                # 过滤常见但无害的编码警告
+                bozo_msg = str(feed.bozo_exception)
+                if 'us-ascii' not in bozo_msg or 'encoding' not in bozo_msg.lower():
+                    logger.warning(f"订阅源 {url} 解析警告: {feed.bozo_exception}")
             
             # 获取订阅源名称
             # Get feed name

@@ -107,8 +107,21 @@ class FeishuPDFTranslationService:
         start_time = time.time()
 
         try:
+            # 0. 处理纯 arXiv ID（如 2501.12345）转换为 URL
+            cleaned_url = pdf_url.strip()
+            # 检查是否是纯 arXiv ID（如 2501.12345 或 arxiv:2501.12345）
+            import re
+            if re.match(r'^\d{4}\.\d{4,5}$', cleaned_url):
+                # 转换为 arXiv URL
+                cleaned_url = f"https://arxiv.org/abs/{cleaned_url}"
+                logger.info(f"已将 arXiv ID 转换为 URL: {cleaned_url}")
+            elif cleaned_url.startswith('arxiv:'):
+                arxiv_id = cleaned_url[6:].strip()
+                cleaned_url = f"https://arxiv.org/abs/{arxiv_id}"
+                logger.info(f"已将 arXiv ID 转换为 URL: {cleaned_url}")
+
             # 1. 下载PDF
-            pdf_path = self._download_pdf(pdf_url)
+            pdf_path = self._download_pdf(cleaned_url)
             if not pdf_path:
                 return {
                     'success': False,

@@ -298,25 +298,70 @@ class FeishuPDFTranslationService:
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # 移除脚本和样式
-            for script in soup(['script', 'style', 'nav', 'footer', 'header']):
-                script.decompose()
+            # 移除不需要的元素
+            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'iframe', 'noscript', 'form', 'input', 'button', 'canvas']):
+                tag.decompose()
+
+            # 移除带有广告、评论、推荐等噪声 class/id 的元素
+            noise_selectors = [
+                '[class*="comment"]', '[class*="review"]', '[class*="sidebar"]',
+                '[class*="footer"]', '[class*="header"]', '[class*="nav"]',
+                '[class*="social"]', '[class*="share"]', '[class*="related"]',
+                '[class*="recommend"]', '[class*="ad-"]', '[class*="popup"]',
+                '[id*="comment"]', '[id*="sidebar"]', '[id*="footer"]',
+                '[id*="header"]', '[id*="nav"]'
+            ]
+            for selector in noise_selectors:
+                for elem in soup.select(selector):
+                    elem.decompose()
 
             # 获取标题
             title = soup.title.string if soup.title else ''
             if not title:
-                title = soup.find('h1')
-                title = title.get_text(strip=True) if title else url
+                h1 = soup.find('h1')
+                title = h1.get_text(strip=True) if h1 else url
 
-            # 获取主要内容
-            content = soup.find('article') or soup.find('main') or soup.find('div', class_=lambda x: x and 'content' in x.lower())
+            # 清理标题
+            title = title.split('|')[0].split('-')[0].split('—')[0].strip()
+
+            # 获取主要内容 - 按优先级查找
+            content = None
+
+            # 1. 找 article 标签
+            content = soup.find('article')
+
+            # 2. 找 main 标签
+            if not content:
+                content = soup.find('main')
+
+            # 3. 找 class 包含 content、post、article、entry 的 div
+            if not content:
+                for div in soup.find_all('div'):
+                    cls = div.get('class', [])
+                    if any(c in ' '.join(cls).lower() for c in ['content', 'post', 'article', 'entry', 'text', 'body']):
+                        if len(div.get_text(strip=True)) > 500:
+                            content = div
+                            break
+
+            # 提取文本
             if content:
-                text = content.get_text(separator='\n', strip=True)
+                # 只保留段落文本
+                paragraphs = []
+                for p in content.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li']):
+                    text = p.get_text(strip=True)
+                    if len(text) > 20:  # 过滤太短的文本
+                        paragraphs.append(text)
+                text = '\n\n'.join(paragraphs)
             else:
+                # 兜底：获取所有文本
                 text = soup.get_text(separator='\n', strip=True)
 
+            # 清理文本：移除空行和多余空白
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            text = '\n'.join(lines)
+
             # 限制文本长度
-            max_length = 50000
+            max_length = 40000
             if len(text) > max_length:
                 text = text[:max_length] + '\n\n... [内容已截断]'
 
@@ -343,33 +388,28 @@ class FeishuPDFTranslationService:
                 'message': '获取网页内容失败'
             }
 
-        # 翻译标题
+        # 翻译标题 - 简化
         translator = self._get_text_translator()
         try:
             title_translated = translator.translate_text(
-                f"请翻译以下标题为中文：{webpage['title']}",
+                webpage['title'],
                 style="casual"
             )
-            # 提取翻译后的标题
-            if '翻译：' in title_translated:
-                title_translated = title_translated.split('翻译：')[-1].strip()
         except Exception as e:
             logger.warning(f"标题翻译失败: {e}")
             title_translated = webpage['title']
 
         # 翻译内容（分段处理）
         content = webpage['content']
-        max_chunk = 8000
+        max_chunk = 6000
         chunks = [content[i:i+max_chunk] for i in range(0, len(content), max_chunk)]
 
         translated_chunks = []
         for i, chunk in enumerate(chunks):
             logger.info(f"翻译网页内容 chunk {i+1}/{len(chunks)}")
             try:
-                translated = translator.translate_text(
-                    f"请将以下内容翻译成中文，保持原文格式：\n\n{chunk}",
-                    style="casual"
-                )
+                # 简化翻译提示，直接翻译
+                translated = translator.translate_text(chunk, style="casual")
                 translated_chunks.append(translated)
             except Exception as e:
                 logger.warning(f"内容翻译失败 chunk {i+1}: {e}")

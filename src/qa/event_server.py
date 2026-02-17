@@ -1245,15 +1245,28 @@ class FeishuEventServer:
                 return {"success": False, "error": "Feishu bot not configured"}
 
             # 提取要翻译的内容
-            # 支持格式：翻译 2501.12345, 翻译[xxx, translate xxx
-            target = question
-            # 去除 "翻译" 或 "translate" 前缀
+            # 支持格式：
+            # - 翻译 2501.12345
+            # - 翻译[标题](URL)  飞书富文本格式
+            # - translate xxx
+            import re
+
+            target = question.strip()
+
+            # 去除前缀
             for prefix in ['翻译[', '翻译 ', 'translate ', 'translate[']:
                 if target.lower().startswith(prefix):
                     target = target[len(prefix):]
                     break
-            # 去除结尾的 ]
-            target = target.strip().rstrip(']')
+
+            # 如果是飞书富文本格式 [标题](URL)，提取 URL
+            match = re.search(r'\((https?://[^\)]+)\)', target)
+            if match:
+                target = match.group(1)
+            else:
+                # 去除结尾的 ]
+                target = target.rstrip(']')
+
             if not target:
                 self._send_reply(
                     message="请提供要翻译的内容，例如：翻译 2501.12345 或 翻译 https://arxiv.org/abs/2501.12345",

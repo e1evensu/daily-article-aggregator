@@ -25,7 +25,7 @@ def test_knowledge_base_retrieve():
     stats = kb.get_stats()
     print('知识库统计:', stats)
 
-    results = kb.retrieve('先知 补天', n_results=5)
+    results = kb.search('先知 补天', n_results=5)
     print('检索结果:', results)
 
 

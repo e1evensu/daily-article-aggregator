@@ -135,8 +135,9 @@ class AggregationEngine:
         # 初始化 AI 客户端（如果启用）
         self._ai_client: OpenAI | None = None
         self._embedding_model = DEFAULT_EMBEDDING_MODEL
+        self._model = "deepseek-ai/DeepSeek-V3"  # 默认模型
         self._embedding_cache: dict[str, list[float]] = {}  # 缓存 embedding 结果
-        
+
         ai_config = config.get('ai_config', {})
         if self.use_ai_similarity and ai_config:
             self._init_ai_client(ai_config)
@@ -174,7 +175,8 @@ class AggregationEngine:
             self._embedding_model = ai_config.get(
                 'embedding_model', DEFAULT_EMBEDDING_MODEL
             )
-            logger.info(f"AI 客户端初始化成功，embedding 模型: {self._embedding_model}")
+            self._model = ai_config.get('model', 'deepseek-ai/DeepSeek-V3')
+            logger.info(f"AI 客户端初始化成功，embedding 模型: {self._embedding_model}, chat 模型: {self._model}")
         except Exception as e:
             logger.error(f"AI 客户端初始化失败: {e}，将使用 jieba 分词作为备选")
             self._ai_client = None
@@ -199,8 +201,8 @@ class AggregationEngine:
             return self._embedding_cache[cache_key]
         
         try:
-            # 限制文本长度（BAAI/bge-large-zh-v1.5 限制 512 tokens，约 1000 字符）
-            truncated_text = text[:1000]
+            # 限制文本长度（BAAI/bge-large-zh-v1.5 限制 512 tokens，约 500 字符）
+            truncated_text = text[:500]
             
             response = self._ai_client.embeddings.create(
                 model=self._embedding_model,
@@ -381,7 +383,7 @@ class AggregationEngine:
 关键词："""
             
             response = self._ai_client.chat.completions.create(
-                model="gpt-4o-mini",  # 使用轻量模型
+                model=self._model,  # 使用配置中的模型
                 messages=[
                     {"role": "system", "content": "你是一个关键词提取专家，擅长从技术文章中提取核心术语。"},
                     {"role": "user", "content": prompt}

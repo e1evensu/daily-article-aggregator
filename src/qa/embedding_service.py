@@ -73,11 +73,20 @@ class EmbeddingService:
         
         if not api_key:
             logger.warning("EmbeddingService initialized without API key")
-        
+
+        # 读取代理配置
+        proxy = config.get('proxy') or os.environ.get('HTTP_PROXY') or os.environ.get('HTTPS_PROXY')
+
         # 初始化 OpenAI 客户端
+        http_client = None
+        if proxy:
+            import httpx
+            http_client = httpx.Client(proxy={"http": proxy, "https": proxy})
+
         self.client = OpenAI(
             base_url=api_base,
-            api_key=api_key
+            api_key=api_key,
+            http_client=http_client
         )
         
         # 模型配置

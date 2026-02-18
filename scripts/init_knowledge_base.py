@@ -127,7 +127,7 @@ def init_knowledge_base(
         logger.info("检查已有知识库，收集已处理的文章 ID...")
         total_docs = knowledge_base.collection.count()
         if total_docs > 0:
-            batch_size = 1000
+            batch_size = 500
             offset = 0
             logger.info(f"共有 {total_docs} 个文档，分批获取 article_id...")
 

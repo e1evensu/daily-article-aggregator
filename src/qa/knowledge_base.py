@@ -601,8 +601,33 @@ class KnowledgeBase:
             )
             
             return self.collection.count()
-            
+
         except Exception as e:
             error_msg = f"Failed to rebuild knowledge base: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
+
+    def reset_client(self) -> None:
+        """
+        重置 ChromaDB 客户端，释放内存
+
+        重新初始化 ChromaDB 连接，用于处理大量文档时避免内存持续增长。
+        注意：这不会影响已存储的数据，只是重新建立连接。
+        """
+        try:
+            logger.info("Resetting ChromaDB client to release memory...")
+            # 关闭旧客户端（释放内存）
+            self.chroma_client = None
+            self.collection = None
+
+            import gc
+            gc.collect()
+
+            # 重新初始化
+            self._init_chromadb()
+            logger.info("ChromaDB client reset complete")
+
+        except Exception as e:
+            logger.warning(f"Failed to reset ChromaDB client: {e}")
+            # 如果重置失败，尝试重新初始化整个知识库
+            self._init_chromadb()

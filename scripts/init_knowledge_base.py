@@ -167,6 +167,7 @@ def init_knowledge_base(
     skipped_already_processed = 0
     skipped_no_content = 0
     memory_cleanup_interval = 50  # 每处理 50 篇文章清理一次内存
+    chroma_reset_interval = 200   # 每处理 200 篇文章重置一次 ChromaDB 客户端
 
     for i, article in enumerate(articles):
         article_id = article["id"]
@@ -212,6 +213,11 @@ def init_knowledge_base(
                 import gc
                 gc.collect()
                 logger.debug(f"已处理 {processed} 篇文章，触发内存清理")
+
+            # 定期重置 ChromaDB 客户端，释放内存
+            if processed > 0 and processed % chroma_reset_interval == 0:
+                knowledge_base.reset_client()
+                logger.info(f"已处理 {processed} 篇文章，重置 ChromaDB 客户端释放内存")
 
         except Exception as e:
             logger.warning(f"文章 {article_id} 处理失败: {e}")

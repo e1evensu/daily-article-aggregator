@@ -121,15 +121,44 @@ def init_knowledge_base(
         }
 
     # 获取已处理的文章 ID（用于断点续传）
+    # 注意：不能一次性获取所有文档，会 OOM。使用分批查询
     processed_article_ids: set = set()
     if resume and not rebuild:
         logger.info("检查已有知识库，收集已处理的文章 ID...")
-        # 从 ChromaDB 获取所有已存在的 article_id
-        existing_docs = knowledge_base.collection.get(include=["metadatas"])
-        if existing_docs and existing_docs["metadatas"]:
-            for meta in existing_docs["metadatas"]:
-                if "article_id" in meta:
-                    processed_article_ids.add(int(meta["article_id"]))
+        total_docs = knowledge_base.collection.count()
+        if total_docs > 0:
+            batch_size = 1000
+            offset = 0
+            logger.info(f"共有 {total_docs} 个文档，分批获取 article_id...")
+
+            while offset < total_docs:
+                # 只获取 IDs 和 metadata，分批查询
+                result = knowledge_base.collection.get(
+                    include=["metadatas"],
+                    limit=batch_size,
+                    offset=offset
+                )
+
+                if result and result["metadatas"]:
+                    for meta in result["metadatas"]:
+                        if "article_id" in meta:
+                            processed_article_ids.add(int(meta["article_id"]))
+
+                offset += batch_size
+
+                # 每处理 10000 条输出一次日志
+                if offset % 10000 == 0 or offset >= total_docs:
+                    logger.info(f"已处理 {offset}/{total_docs} 个文档...")
+
+                # 定期清理内存
+                if offset % 20000 == 0:
+                    import gc
+                    gc.collect()
+
+            del result
+            import gc
+            gc.collect()
+
         logger.info(f"发现 {len(processed_article_ids)} 篇已处理的文章，将跳过这些文章")
 
     # 批量处理文章（逐篇处理以便更好地跟踪进度和错误）

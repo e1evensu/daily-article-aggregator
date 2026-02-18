@@ -30,12 +30,16 @@ from src.qa.models import KnowledgeDocument, RetrievalResult
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# ChromaDB 集合配置
+# ChromaDB 集合配置（优化内存）
 COLLECTION_METADATA = {
     "hnsw:space": "cosine",  # 使用余弦相似度
-    "hnsw:M": 16,            # HNSW 参数
-    "hnsw:construction_ef": 100
+    "hnsw:M": 8,             # 降低 HNSW M 参数，减少内存占用
+    "hnsw:construction_ef": 64,  # 降低构建时的 ef 参数
+    "hnsw:search_ef": 64     # 降低搜索时的 ef 参数
 }
+
+# 批量处理配置
+DEFAULT_EMBEDDING_BATCH_SIZE = 32  # 每次最多处理的块数，避免内存峰值
 
 
 class KnowledgeBase:
@@ -390,54 +394,69 @@ class KnowledgeBase:
                 if not article_id or not content:
                     logger.warning(f"Skipping article with missing id or content")
                     continue
-                
+
                 # 组合标题和内容进行分块
                 full_text = f"{title}\n\n{content}" if title else content
                 chunks = self.chunk_text(full_text)
-                
+
                 if not chunks:
                     logger.warning(f"No chunks generated for article {article_id}")
                     continue
-                
-                # 批量向量化
-                embeddings = self._embedding_service.embed_batch(chunks)
-                
-                # 准备文档数据
-                doc_ids = []
-                documents = []
-                metadatas = []
-                valid_embeddings = []
-                
-                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                    if not embedding:  # 跳过空向量
-                        continue
-                    
-                    doc_id = f"{article_id}_{i}"
-                    doc_ids.append(doc_id)
-                    documents.append(chunk)
-                    valid_embeddings.append(embedding)
-                    metadatas.append({
-                        'article_id': int(article_id),
-                        'title': title or '',
-                        'url': article.get('url') or '',
-                        'source_type': article.get('source_type') or '',
-                        'published_date': article.get('published_date') or '',
-                        'category': article.get('category') or '',
-                        'chunk_index': i
-                    })
-                
-                if doc_ids:
-                    # 添加到 ChromaDB
-                    self.collection.add(
-                        ids=doc_ids,
-                        documents=documents,
-                        embeddings=valid_embeddings,
-                        metadatas=metadatas
-                    )
-                    added_count += len(doc_ids)
-                    logger.debug(
-                        f"Added article {article_id} with {len(doc_ids)} chunks"
-                    )
+
+                # 分批处理块，避免内存峰值
+                batch_size = DEFAULT_EMBEDDING_BATCH_SIZE
+                for batch_start in range(0, len(chunks), batch_size):
+                    batch_end = min(batch_start + batch_size, len(chunks))
+                    batch_chunks = chunks[batch_start:batch_end]
+
+                    # 批量向量化
+                    embeddings = self._embedding_service.embed_batch(batch_chunks)
+
+                    # 准备文档数据
+                    doc_ids = []
+                    documents = []
+                    metadatas = []
+                    valid_embeddings = []
+
+                    for i, (chunk, embedding) in enumerate(zip(batch_chunks, embeddings)):
+                        if not embedding:  # 跳过空向量
+                            continue
+
+                        chunk_idx = batch_start + i
+                        doc_id = f"{article_id}_{chunk_idx}"
+                        doc_ids.append(doc_id)
+                        documents.append(chunk)
+                        valid_embeddings.append(embedding)
+                        metadatas.append({
+                            'article_id': int(article_id),
+                            'title': title or '',
+                            'url': article.get('url') or '',
+                            'source_type': article.get('source_type') or '',
+                            'published_date': article.get('published_date') or '',
+                            'category': article.get('category') or '',
+                            'chunk_index': chunk_idx
+                        })
+
+                    if doc_ids:
+                        # 添加到 ChromaDB
+                        self.collection.add(
+                            ids=doc_ids,
+                            documents=documents,
+                            embeddings=valid_embeddings,
+                            metadatas=metadatas
+                        )
+                        added_count += len(doc_ids)
+
+                    # 每批次后释放内存
+                    del embeddings
+                    del doc_ids
+                    del documents
+                    del metadatas
+                    del valid_embeddings
+
+                logger.debug(
+                    f"Added article {article_id} with {len(chunks)} chunks"
+                )
                 
             except Exception as e:
                 logger.error(f"Failed to add article {article.get('id')}: {e}")

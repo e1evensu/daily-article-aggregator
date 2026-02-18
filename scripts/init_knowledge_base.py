@@ -4,14 +4,16 @@
 
 从 SQLite 数据库读取所有文章，批量添加到 ChromaDB 知识库。
 用于首次初始化或重建知识库。
+支持断点续传（自动跳过已处理的文章）和内存优化。
 
 Usage:
-    python scripts/init_knowledge_base.py [--rebuild] [--batch-size N]
+    python scripts/init_knowledge_base.py [--rebuild] [--batch-size N] [--no-resume]
 
 Options:
     --rebuild       重建知识库（清空现有数据）
     --batch-size N  批量处理大小（默认 100）
     --limit N       限制处理文章数量（用于测试）
+    --no-resume     禁用断点续传，从头开始处理所有文章
 
 Requirements: 1.2, 1.3
 """
@@ -50,16 +52,18 @@ logger = logging.getLogger(__name__)
 def init_knowledge_base(
     rebuild: bool = False,
     batch_size: int = 100,
-    limit: int | None = None
+    limit: int | None = None,
+    resume: bool = True
 ) -> dict:
     """
     初始化知识库
-    
+
     Args:
         rebuild: 是否重建知识库（清空现有数据）
         batch_size: 批量处理大小
         limit: 限制处理文章数量
-    
+        resume: 是否启用断点续传（默认 True）
+
     Returns:
         初始化结果统计
     """
@@ -91,22 +95,22 @@ def init_knowledge_base(
     # 获取当前知识库统计
     stats_before = knowledge_base.get_stats()
     logger.info(f"当前知识库状态: {stats_before['total_documents']} 个文档")
-    
+
     # 初始化文章仓库
     db_path = config.get("database", {}).get("path", "data/articles.db")
     repository = ArticleRepository(db_path)
-    
+
     # 获取所有文章
     logger.info("从数据库读取文章...")
     articles = repository.get_all_articles()
-    
+
     if limit:
         articles = articles[:limit]
         logger.info(f"限制处理 {limit} 篇文章")
-    
+
     total_articles = len(articles)
     logger.info(f"共 {total_articles} 篇文章待处理")
-    
+
     if total_articles == 0:
         logger.warning("没有文章需要处理")
         return {
@@ -115,27 +119,49 @@ def init_knowledge_base(
             "failed": 0,
             "documents_added": 0
         }
-    
+
+    # 获取已处理的文章 ID（用于断点续传）
+    processed_article_ids: set = set()
+    if resume and not rebuild:
+        logger.info("检查已有知识库，收集已处理的文章 ID...")
+        # 从 ChromaDB 获取所有已存在的 article_id
+        existing_docs = knowledge_base.collection.get(include=["metadatas"])
+        if existing_docs and existing_docs["metadatas"]:
+            for meta in existing_docs["metadatas"]:
+                if "article_id" in meta:
+                    processed_article_ids.add(int(meta["article_id"]))
+        logger.info(f"发现 {len(processed_article_ids)} 篇已处理的文章，将跳过这些文章")
+
     # 批量处理文章（逐篇处理以便更好地跟踪进度和错误）
     processed = 0
     failed = 0
-    skipped = 0
-    
+    skipped_already_processed = 0
+    skipped_no_content = 0
+    memory_cleanup_interval = 50  # 每处理 50 篇文章清理一次内存
+
     for i, article in enumerate(articles):
         article_id = article["id"]
         title = article["title"][:50] + "..." if len(article["title"]) > 50 else article["title"]
-        
+
+        # 断点续传：跳过已处理的文章
+        if resume and article_id in processed_article_ids:
+            skipped_already_processed += 1
+            # 进度显示时也更新计数
+            if (i + 1) % 10 == 0:
+                logger.info(f"处理进度: {i + 1}/{total_articles} ({(i + 1) * 100 // total_articles}%) - 已跳过 {skipped_already_processed} 篇已处理文章")
+            continue
+
         # 进度显示
         if (i + 1) % 10 == 0 or i == 0:
             logger.info(f"处理进度: {i + 1}/{total_articles} ({(i + 1) * 100 // total_articles}%)")
-        
+
         try:
             content = article.get("content") or article.get("summary") or ""
             if not content.strip():
                 logger.debug(f"跳过无内容文章 {article_id}: {title}")
-                skipped += 1
+                skipped_no_content += 1
                 continue
-            
+
             # 转换为知识库需要的格式
             article_dict = {
                 "id": article_id,
@@ -147,11 +173,17 @@ def init_knowledge_base(
                 "category": article.get("category"),
                 "published_date": article.get("published_date", ""),
             }
-            
+
             # 添加到知识库
             knowledge_base.add_articles([article_dict])
             processed += 1
-            
+
+            # 定期内存清理（避免 OOM）
+            if processed > 0 and processed % memory_cleanup_interval == 0:
+                import gc
+                gc.collect()
+                logger.debug(f"已处理 {processed} 篇文章，触发内存清理")
+
         except Exception as e:
             logger.warning(f"文章 {article_id} 处理失败: {e}")
             failed += 1
@@ -165,7 +197,8 @@ def init_knowledge_base(
     logger.info("初始化完成")
     logger.info(f"  总文章数: {total_articles}")
     logger.info(f"  成功处理: {processed}")
-    logger.info(f"  跳过(无内容): {skipped}")
+    logger.info(f"  跳过(已存在): {skipped_already_processed}")
+    logger.info(f"  跳过(无内容): {skipped_no_content}")
     logger.info(f"  处理失败: {failed}")
     logger.info(f"  新增文档: {documents_added}")
     logger.info(f"  知识库总文档: {stats_after['total_documents']}")
@@ -174,7 +207,8 @@ def init_knowledge_base(
     return {
         "total_articles": total_articles,
         "processed": processed,
-        "skipped": skipped,
+        "skipped_already_processed": skipped_already_processed,
+        "skipped_no_content": skipped_no_content,
         "failed": failed,
         "documents_added": documents_added,
         "total_documents": stats_after["total_documents"]
@@ -204,14 +238,20 @@ def main():
         default=None,
         help="限制处理文章数量（用于测试）"
     )
-    
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="禁用断点续传，从头开始处理所有文章"
+    )
+
     args = parser.parse_args()
-    
+
     try:
         result = init_knowledge_base(
             rebuild=args.rebuild,
             batch_size=args.batch_size,
-            limit=args.limit
+            limit=args.limit,
+            resume=not args.no_resume
         )
         
         if result["failed"] > 0:

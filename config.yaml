@@ -189,6 +189,8 @@ knowledge_qa:
     path: data/chroma_db
     collection_name: knowledge_articles
   embedding:
+    api_base: https://api.siliconflow.cn/v1
+    api_key: ${SILICONFLOW_API_KEY:}
     model: Qwen/Qwen3-Embedding-8B
   event_server:
     host: 0.0.0.0

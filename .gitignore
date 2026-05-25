@@ -1,0 +1,32 @@
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env/secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Go
+bin/
+*.test
+coverage.out
+
+# Node/Hexo if added later
+node_modules/
+dist/
+public/
+
+# Local data
+data/
+tmp/
+logs/
+

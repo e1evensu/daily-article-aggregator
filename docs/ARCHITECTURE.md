@@ -1,0 +1,137 @@
+# Intelligence System — 架构设计文档
+
+> 版本: v0.7 | 更新: 2026-05-26
+> 状态: **概览草案** — 以 `.spec/` 为准
+> 
+> 详细设计见 .spec/ 目录。本文档是概览。
+
+---
+
+## 系统架构
+
+```
+curated sources (10个, L1 only)
+     │
+     ▼
+collection dispatcher ──→ source health tracking
+     │                     (3 failures → disabled)
+     ▼
+normalize + dedup (cross-source via also_seen_in)
+     │
+     ▼
+Stage 1: deepseek-v4-flash (全量, NVIDIA NIM)
+     │
+     ├── score < 10 → 立即删
+     ├── score < 75 → 设 expires_at
+     │
+     ▼
+Stage 2: deepseek-v4-pro (≥75 分, NVIDIA NIM)
+     │   ├── confidence 推导 (tentative → firm → confirmed)
+     │   └── trend_signal 赋值 (emerging/growing/stable/declining)
+     │
+     ▼
+digest generation (爬完即生成)
+     │
+     ├── MySQL: items + digests + runs
+     ├── Hexo: digest → /opt/blog/source/_posts/ (主路径)
+     ├── OSS: digest markdown backup
+     └── REST API (内部, localhost:8100)
+```
+
+## 存储
+
+```
+38 (EU, 4C8G) — 采集/计算
+├── intelligence-api + worker (Docker, network_mode: host)
+├── autossh tunnel → 114
+└── Hexo posts → /opt/blog/source/_posts/
+
+114 (CN, 4C4G) — 服务机
+├── MySQL (Docker, intelligence 库)
+├── Redis (Docker)
+└── OSS (oss2 SDK, digest 备份)
+```
+
+## 4 张核心表
+
+| 表 | 用途 |
+|---|---|
+| sources | 源配置 + 健康 + domain 枚举 |
+| runs | 运行日志 + 各源状态 (JSON) + progress |
+| items | 条目 + 内联分析字段 + 保留策略 |
+| digests | 日报 + Hexo 路径 + OSS 链接 |
+
+无 channels 表（domain 是枚举）。无 item_analysis 表（合并进 items）。
+
+## 关键设计
+
+- **两段 AI**: flash 全量 → pro 高分 (≥75)，设置 provider-compatible 输出上限，不假设无限额度
+- **保守起步**: 10 源 (6 安全 + 4 AI)，质量优先
+- **数据分级**: <10 立删 / <30 五天 / <50 十天 / <75 三十天 / ≥75 永久
+- **跨源去重**: also_seen_in 记录多源出现，支持 confidence 动态升级
+- **Confidence 推导**: tentative (单源) → firm (official 或有交叉源) → confirmed (official+交叉 或 ≥2 交叉源)
+- **Trend signal**: emerging / growing / stable / declining，模型判断
+- **运行锁**: 同一时间只允许一个 run，12h stale timeout
+- **00:00 北京启动**: 爬完分析完就生成日报，不卡固定时间
+- **Digest 发布**: Hexo post (主路径) + OSS backup
+
+## API 概览
+
+内部 REST API，bind `127.0.0.1:8100`。
+
+| 端点 | 用途 |
+|---|---|
+| `GET /api/v1/items` | 条目列表，支持 domain/score/category/confidence 过滤 |
+| `GET /api/v1/digests` | 日报，支持 json/markdown 格式 |
+| `GET /api/v1/sources` | 源列表，含 health/spark(14天)/today_items |
+| `GET /api/v1/runs` | 运行记录，含 progress 和 per-source stats |
+| `GET /api/v1/stats` | 聚合统计：histogram、category、confidence、retention |
+
+详见 `.spec/api.md`。
+
+## 前端原型参考
+
+`src/front/` 包含 React CDN 原型（无构建步骤）。它是交互参考，不是 Phase 1 生产 dashboard，也不是数据契约来源。数据契约以 `.spec/data-model.md`、`.spec/source-catalog.md`、`.spec/api.md` 为准。
+
+当前前端原型审查状态：**needs sync before implementation**。
+
+- 缺少 `styles.css`，入口页面不能按设计渲染。
+- Fixture 仍使用旧 source ID（如 `sec_nvd`）而非 catalog 的长 ID（如 `security_nvd_cve`）。
+- Fixture 仍使用旧分析字段（`analysis_model` / `prompt_version`），未拆成 `stage1_*` / `stage2_*`。
+- `also_seen_in` 仍是字符串数组，未按 data model 改为 source occurrence 对象数组。
+- Sources 视图把 10 个候选源显示为 approved，和 source approval gate 冲突。
+- Digest footer 展示的 OSS 路径不是 deployment SPEC 的 Hexo 主路径 + OSS 备份格式。
+
+| 文件 | 内容 |
+|---|---|
+| `data.js` | Fixture 数据；需要重新对齐 source catalog、data model、API SPEC |
+| `ui.jsx` | 共享组件：ScoreNum/Bar、Confidence、Trend、Health、DomainBadge |
+| `view-items.jsx` | Items 列表 + 详情 drawer (Stage 1/2 完整展示) |
+| `view-other.jsx` | Digest/Runs/Sources/Stats 视图 |
+| `app.jsx` | App shell：sidebar + 导航 + 视图路由 |
+| `tweaks-panel.jsx` | 可复用 tweak 控件面板 |
+
+原型目标数据流（待重新校验）：
+- domain enum 过滤 + insight_score 排序
+- Stage 1/2 分析元数据展示
+- also_seen_in 交叉验证展示 ("corroborated by N")
+- confidence/trend_signal 仅 Stage 2 展示
+- retention 分级可视化
+- Run pipeline 步骤进度 (FETCH→NORMALIZE→DEDUP→STAGE1→STAGE2→DIGEST→CLEANUP)
+- Source health + 14天 spark 趋势
+
+## Phase 分期
+
+| Phase | 内容 |
+|---|---|
+| **1** | 10 源 + 两段 AI + 日报 + Hexo + OSS + API (内部) |
+| **2** | 飞书推送 + X/Twitter + 实体图谱 + MCP |
+| **3** | Dashboard + 金融 + CDP + 用户画像 |
+
+## 修改历史
+
+| 日期 | 版本 | 内容 |
+|------|------|------|
+| 2026-05-26 | v0.7 | 明确前端原型不是契约来源；记录 fixture/schema/style/source-status 同步问题 |
+| 2026-05-26 | v0.6 | 补充 confidence 推导/trend signal 规则、API 概览、前端原型参考、Hexo 发布路径、关闭所有 open questions |
+| 2026-05-26 | v0.5 | 与 .spec/ 对齐：砍 channels/source_fetches，加 run lock/also_seen_in/stage-specific analysis metadata，确认基础设施，保留生产运行验证门槛 |

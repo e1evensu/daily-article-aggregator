@@ -30,3 +30,6 @@ public/
 data/
 tmp/
 logs/
+
+# vendored reference repos, nested git, keep out of VCS
+archive/

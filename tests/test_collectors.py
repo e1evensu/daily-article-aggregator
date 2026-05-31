@@ -1,3 +1,5 @@
+import asyncio
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -120,6 +122,53 @@ async def test_hackernews_collector_filters_by_keywords():
 
     assert [item.native_id for item in items] == ["1"]
     assert items[0].metadata["hn_url"] == "https://news.ycombinator.com/item?id=1"
+
+
+@pytest.mark.asyncio
+async def test_hackernews_collector_fetches_story_items_concurrently():
+    active = 0
+    peak_active = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal active, peak_active
+        if request.url.path == "/v0/topstories.json":
+            return httpx.Response(200, json=[1, 2, 3, 4])
+
+        active += 1
+        peak_active = max(peak_active, active)
+        await asyncio.sleep(0.05)
+        active -= 1
+        story_id = request.url.path.rsplit("/", 1)[-1].split(".")[0]
+        return httpx.Response(
+            200,
+            json={
+                "id": int(story_id),
+                "type": "story",
+                "title": f"LLM security story {story_id}",
+                "url": f"https://example.com/{story_id}",
+                "by": "alice",
+                "time": 1779782400,
+                "score": 120,
+            },
+        )
+
+    collector = HackerNewsCollector(
+        "ai_hackernews",
+        "https://hacker-news.firebaseio.com/v0/topstories.json",
+        {
+            "keyword_filter": ["llm", "security"],
+            "max_items": 4,
+            "max_concurrency": 4,
+            "_transport": httpx.MockTransport(handler),
+        },
+    )
+
+    started = time.monotonic()
+    items = await collector.fetch()
+
+    assert len(items) == 4
+    assert peak_active > 1
+    assert time.monotonic() - started < 0.15
 
 
 def test_create_collector_uses_strategy_and_configured_collector_adapter():

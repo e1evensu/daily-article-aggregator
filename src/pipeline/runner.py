@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,7 +11,9 @@ from sqlalchemy.sql.expression import true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.ai.analyzer import Analyzer, should_run_stage2
+from src.collector.catalog import catalog_approved_source_ids
 from src.collector.dispatcher import collect_sources
+from src.deep.pipeline import enqueue_candidates
 from src.config import parse_csv, settings
 from src.models.digest import Digest
 from src.models.item import Item
@@ -63,6 +66,7 @@ async def run_daily_pipeline(
     oss_uploader=upload_digest_backup,
     stats_updater: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> PipelineRunResult:
+    """Run the full daily ingestion, analysis, digest, and cleanup workflow."""
     sources = await load_approved_sources(session)
     stats = initial_run_stats([source.id for source in sources])
     await _emit_stats(stats, stats_updater)
@@ -105,9 +109,7 @@ async def run_daily_pipeline(
     inserted_items = persist_result.inserted
     stats["stage1"] = {"total": len(inserted_items), "succeeded": 0, "failed": 0}
     await _emit_stats(stats, stats_updater)
-    for item in inserted_items:
-        source = source_by_id[item.source_id]
-        outcome = await analyzer.analyze_stage1(_item_payload(item), _source_payload(source))
+    async for item, outcome in _iter_stage1_results(analyzer, inserted_items, source_by_id):
         apply_stage1_outcome(item, outcome)
         if outcome.error:
             stats["stage1"]["failed"] += 1
@@ -118,14 +120,28 @@ async def run_daily_pipeline(
     stage2_items = [item for item in inserted_items if should_run_stage2(item.insight_score)]
     stats["stage2"] = {"total": len(stage2_items), "succeeded": 0, "failed": 0}
     await _emit_stats(stats, stats_updater)
-    for item in stage2_items:
-        source = source_by_id[item.source_id]
-        outcome = await analyzer.analyze_stage2(_item_payload(item), _source_payload(source), item.also_seen_in)
+    async for item, outcome in _iter_stage2_results(analyzer, stage2_items, source_by_id):
         apply_stage2_outcome(item, outcome)
         if outcome.error:
             stats["stage2"]["failed"] += 1
         else:
             stats["stage2"]["succeeded"] += 1
+        await _emit_stats(stats, stats_updater)
+
+    # Deep-analysis: enqueue qualifying security items for the out-of-band pi
+    # Finder worker (fast DB inserts here; the slow agentic run happens in
+    # src.deep.worker). Never block the daily pipeline on pi.
+    if settings.deep_analysis_enabled:
+        try:
+            enqueued = await enqueue_candidates(
+                session, inserted_items,
+                min_score=settings.deep_analysis_min_score,
+                limit=settings.deep_analysis_max_per_run,
+            )
+            stats["deep_queued"] = len(enqueued)
+        except Exception as exc:  # deep-analysis is best-effort; never fail the run
+            stats["deep_queued"] = 0
+            stats["deep_error"] = str(exc)[:200]
         await _emit_stats(stats, stats_updater)
 
     stats["digest"]["status"] = "running"
@@ -168,10 +184,59 @@ async def run_daily_pipeline(
 
 
 async def load_approved_sources(session: AsyncSession) -> list[Source]:
+    """Load only sources that are both approved in config and enabled in the DB."""
+    allowed_domains = parse_csv(settings.digest_domains)
+    allowed_source_ids = catalog_approved_source_ids()
     result = await session.execute(
-        select(Source).where(Source.is_active == true(), Source.status == "approved", Source.health != "disabled")
+        select(Source).where(
+            Source.is_active == true(),
+            Source.status == "approved",
+            Source.health != "disabled",
+            Source.domain.in_(allowed_domains),
+            Source.id.in_(allowed_source_ids),
+        )
     )
     return list(result.scalars().all())
+
+
+async def _iter_stage1_results(analyzer: Analyzer, items: list[Item], source_by_id: dict[str, Source]):
+    """Yield stage-1 analysis results as they complete under the configured concurrency cap."""
+    sem = asyncio.Semaphore(max(1, settings.stage1_concurrency))
+
+    async def run_one(item: Item):
+        async with sem:
+            source = source_by_id[item.source_id]
+            outcome = await analyzer.analyze_stage1(_item_payload(item), _source_payload(source))
+            return item, outcome
+
+    tasks = [asyncio.create_task(run_one(item)) for item in items]
+    try:
+        for task in asyncio.as_completed(tasks):
+            yield await task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+
+async def _iter_stage2_results(analyzer: Analyzer, items: list[Item], source_by_id: dict[str, Source]):
+    """Yield stage-2 analysis results as they complete under the configured concurrency cap."""
+    sem = asyncio.Semaphore(max(1, settings.stage2_concurrency))
+
+    async def run_one(item: Item):
+        async with sem:
+            source = source_by_id[item.source_id]
+            outcome = await analyzer.analyze_stage2(_item_payload(item), _source_payload(source), item.also_seen_in)
+            return item, outcome
+
+    tasks = [asyncio.create_task(run_one(item)) for item in items]
+    try:
+        for task in asyncio.as_completed(tasks):
+            yield await task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
 
 
 async def _generate_and_store_digest(
@@ -187,6 +252,7 @@ async def _generate_and_store_digest(
     hexo_writer,
     oss_uploader,
 ) -> dict[str, Any]:
+    """Build, persist, and optionally upload one domain digest for this pipeline run."""
     digest_items = [_digest_item(item) for item in items if item.analysis_stage >= 1 and item.insight_score is not None]
     candidate_items = [item for item in digest_items if item.insight_score >= settings.digest_candidate_threshold]
     if not candidate_items:
@@ -229,6 +295,7 @@ async def _generate_and_store_digest(
 
 
 async def _generate_digest_overview(analyzer: Analyzer, domain: str, items: list[DigestItem]) -> str | None:
+    """Ask the analyzer for a short overview based on the highest-signal digest candidates."""
     high_value_payload = [
         {
             "title": item.title,
@@ -247,6 +314,7 @@ async def _generate_digest_overview(analyzer: Analyzer, domain: str, items: list
 
 
 def _digest_model_from_artifact(artifact: DigestArtifact, *, run_id: str, oss_url: str | None) -> Digest:
+    """Convert a rendered digest artifact into the ORM model stored in MySQL."""
     return Digest(
         id=artifact.id,
         run_id=run_id,
@@ -263,6 +331,7 @@ def _digest_model_from_artifact(artifact: DigestArtifact, *, run_id: str, oss_ur
 
 
 def _digest_item(item: Item) -> DigestItem:
+    """Project an analyzed item into the smaller schema used by digest generation."""
     return DigestItem(
         id=item.id,
         title=item.title,
@@ -276,6 +345,7 @@ def _digest_item(item: Item) -> DigestItem:
 
 
 def _item_payload(item: Item) -> dict[str, Any]:
+    """Serialize the item fields that the analyzer consumes for stage processing."""
     return {
         "id": item.id,
         "title": item.title,
@@ -291,6 +361,7 @@ def _item_payload(item: Item) -> dict[str, Any]:
 
 
 def _source_payload(source: Source) -> dict[str, Any]:
+    """Serialize the source attributes that influence model prompts and confidence."""
     return {
         "id": source.id,
         "name": source.name,
@@ -299,5 +370,6 @@ def _source_payload(source: Source) -> dict[str, Any]:
 
 
 async def _emit_stats(stats: dict[str, Any], stats_updater: Callable[[dict[str, Any]], Awaitable[None]] | None) -> None:
+    """Push the latest in-memory run stats to the optional persistence callback."""
     if stats_updater:
         await stats_updater(stats)

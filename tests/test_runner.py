@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from types import SimpleNamespace
+import asyncio
 
 import pytest
 
@@ -9,7 +9,7 @@ from src.collector.base import RawItem
 from src.collector.dispatcher import SourceFetchResult
 from src.models.source import Source
 from src.pipeline.output import OSSConfig, OutputError
-from src.pipeline.runner import PipelineOptions, run_daily_pipeline
+from src.pipeline.runner import PipelineOptions, load_approved_sources, run_daily_pipeline
 
 
 class FakeScalarResult:
@@ -17,6 +17,7 @@ class FakeScalarResult:
         self.values = values
 
     def all(self):
+        """Return the preloaded row tuples for fake scalar-result calls."""
         return self.values
 
 
@@ -27,10 +28,22 @@ class FakeExecuteResult:
         self.rowcount = rowcount
 
     def scalars(self):
+        """Return a fake scalar collection over the prepared values."""
         return FakeScalarResult(self.scalar_values)
 
     def scalar_one_or_none(self):
+        """Return the prepared scalar-one result."""
         return self.scalar_one
+
+
+class CapturingSession:
+    def __init__(self):
+        self.statements = []
+
+    async def execute(self, statement):
+        """Capture executed statements and return an empty execute result."""
+        self.statements.append(statement)
+        return FakeExecuteResult(scalar_values=[])
 
 
 class FakeSession:
@@ -38,8 +51,10 @@ class FakeSession:
         self.sources = sources
         self.items_by_hash = {}
         self.added = []
+        self.commits = 0
 
     async def execute(self, statement):
+        """Return fake source/item query results used by runner tests."""
         text = str(statement)
         if "FROM sources" in text:
             return FakeExecuteResult(scalar_values=self.sources)
@@ -52,9 +67,14 @@ class FakeSession:
         return FakeExecuteResult()
 
     def add(self, obj):
+        """Track added ORM objects and index items by dedup hash."""
         self.added.append(obj)
         if hasattr(obj, "dedup_hash"):
             self.items_by_hash[obj.dedup_hash] = obj
+
+    async def commit(self):
+        """Record explicit commit attempts made by the code under test."""
+        self.commits += 1
 
 
 class FakeAnalyzer:
@@ -63,6 +83,7 @@ class FakeAnalyzer:
         self.overview_calls = []
 
     async def analyze_stage1(self, item, source):
+        """Return deterministic stage-1 analysis based on the item's title prefix."""
         score = 88 if item["title"].startswith("High") else 55
         return Stage1Outcome(
             analysis=Stage1Analysis(
@@ -81,6 +102,7 @@ class FakeAnalyzer:
         )
 
     async def generate_digest_overview(self, domain, items):
+        """Return either a canned digest overview or a parse-error outcome."""
         self.overview_calls.append((domain, items))
         if self.overview is None:
             return DigestOverviewOutcome(
@@ -101,6 +123,7 @@ class FakeAnalyzer:
         )
 
     async def analyze_stage2(self, item, source, also_seen_in=None):
+        """Return deterministic successful stage-2 analysis output."""
         return Stage2Outcome(
             analysis=Stage2Analysis(
                 recommendation_reason="值得处理",
@@ -116,7 +139,23 @@ class FakeAnalyzer:
         )
 
 
+class SlowAnalyzer(FakeAnalyzer):
+    def __init__(self):
+        super().__init__("overview")
+        self.active_stage1 = 0
+        self.peak_stage1 = 0
+
+    async def analyze_stage1(self, item, source):
+        """Sleep briefly so concurrency limits can be observed in tests."""
+        self.active_stage1 += 1
+        self.peak_stage1 = max(self.peak_stage1, self.active_stage1)
+        await asyncio.sleep(0.02)
+        self.active_stage1 -= 1
+        return await super().analyze_stage1(item, source)
+
+
 def _source(source_id="security_nvd_cve", domain="security", status="approved"):
+    """Build a minimal Source model for pipeline runner tests."""
     source = Source(
         id=source_id,
         name=source_id,
@@ -136,6 +175,7 @@ def _source(source_id="security_nvd_cve", domain="security", status="approved"):
 
 
 def _options(tmp_path, oss_config=None):
+    """Build standard PipelineOptions for runner tests."""
     return PipelineOptions(
         run_id="run_1",
         window_start=datetime(2026, 5, 25, 8, 0, tzinfo=timezone.utc),
@@ -143,6 +183,18 @@ def _options(tmp_path, oss_config=None):
         hexo_posts_dir=tmp_path,
         oss_config=oss_config,
     )
+
+
+@pytest.mark.asyncio
+async def test_load_approved_sources_is_limited_to_phase1_catalog_and_domains():
+    session = CapturingSession()
+
+    await load_approved_sources(session)
+
+    sql = str(session.statements[0])
+    assert "sources.status = :status_1" in sql
+    assert "sources.domain IN" in sql
+    assert "sources.id IN" in sql
 
 
 @pytest.mark.asyncio
@@ -208,6 +260,42 @@ async def test_run_daily_pipeline_success_path_writes_digest_and_stats(tmp_path)
     assert stats_updates[0]["sources"]["security_nvd_cve"]["status"] == "pending"
     assert any(update["stage1"] == {"total": 1, "succeeded": 1, "failed": 0} for update in stats_updates)
     assert stats_updates[-1]["retention_deleted"] == 0
+    assert session.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_run_daily_pipeline_respects_stage1_concurrency(tmp_path, monkeypatch):
+    session = FakeSession([_source()])
+    analyzer = SlowAnalyzer()
+    monkeypatch.setattr("src.pipeline.runner.settings.stage1_concurrency", 2)
+
+    async def collector(sources, since=None):
+        return [
+            SourceFetchResult(
+                source_id="security_nvd_cve",
+                status="succeeded",
+                items=[
+                    RawItem(
+                        source_id="security_nvd_cve",
+                        title=f"Low CVE {i}",
+                        canonical_url=f"https://nvd.nist.gov/vuln/detail/CVE-{i}",
+                        native_id=f"CVE-{i}",
+                    )
+                    for i in range(5)
+                ],
+                duration_s=1.0,
+            )
+        ]
+
+    result = await run_daily_pipeline(
+        session,
+        analyzer,
+        _options(tmp_path),
+        collector=collector,
+    )
+
+    assert result.stats_json["stage1"] == {"total": 5, "succeeded": 5, "failed": 0}
+    assert analyzer.peak_stage1 == 2
 
 
 @pytest.mark.asyncio

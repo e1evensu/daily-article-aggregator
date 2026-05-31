@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 
 
 def _parse_date(entry: dict, field: str) -> datetime | None:
+    """Parse one RSS/Atom date field into UTC using several feedparser fallbacks."""
     raw = entry.get(field)
     if not raw:
         raw = entry.get("updated")
@@ -43,6 +44,7 @@ def _parse_date(entry: dict, field: str) -> datetime | None:
 
 
 def _extract_content(entry: dict, config: dict) -> str | None:
+    """Extract the preferred content field from an RSS/Atom entry."""
     content_field = config.get("content_field", "summary")
     if content_field == "content":
         content_list = entry.get("content", [])
@@ -57,6 +59,7 @@ def _extract_content(entry: dict, config: dict) -> str | None:
 
 
 def _extract_author(entry: dict, config: dict) -> str | None:
+    """Extract the preferred author field from an RSS/Atom entry."""
     field = config.get("author_field", "author")
     if not field:
         return None
@@ -73,6 +76,7 @@ def _extract_author(entry: dict, config: dict) -> str | None:
 
 
 def _extract_native_id(entry: dict, config: dict) -> str | None:
+    """Extract a stable native id from an RSS/Atom entry."""
     entry_id = entry.get("id")
     if not entry_id:
         return None
@@ -86,6 +90,7 @@ def _extract_native_id(entry: dict, config: dict) -> str | None:
 
 class RSSCollector(BaseCollector):
     async def fetch(self, since: datetime | None = None) -> list[RawItem]:
+        """Fetch an RSS/Atom feed and convert entries into RawItem records."""
         timeout = httpx.Timeout(float(self.config.get("timeout_s", settings.collector_timeout_s)))
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(self.url)

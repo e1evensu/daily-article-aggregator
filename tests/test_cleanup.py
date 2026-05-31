@@ -14,6 +14,7 @@ class FakeSession:
         self.statements = []
 
     async def execute(self, statement):
+        """Capture the delete statement issued by the cleanup routine."""
         self.statements.append(statement)
         return FakeDeleteResult()
 

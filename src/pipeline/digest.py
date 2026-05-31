@@ -32,6 +32,7 @@ class DigestArtifact:
 
     @property
     def hexo_path(self) -> str:
+        """Return the Hexo filename used when writing this digest artifact."""
         return f"intelligence-{self.domain}-{self.date.isoformat()}.md"
 
 
@@ -63,6 +64,7 @@ def build_digest_artifact(
     high_value_threshold: int = 75,
     top_n_per_category: int = 5,
 ) -> DigestArtifact | None:
+    """Build the stored digest artifact or return None when nothing qualifies for publication."""
     generated_at = _ensure_utc(generated_at or datetime.now(timezone.utc))
     candidate_items = [item for item in items if item.insight_score >= candidate_threshold]
     if not candidate_items:
@@ -116,6 +118,7 @@ def render_digest_markdown(
     stats: dict[str, Any],
     generated_at: datetime,
 ) -> str:
+    """Render the digest artifact into the Hexo-compatible markdown body."""
     frontmatter = [
         "---",
         f"title: {title}",
@@ -169,6 +172,7 @@ def render_digest_markdown(
 
 
 def _build_highlights(items: list[DigestItem], top_n_per_category: int) -> list[dict[str, Any]]:
+    """Group top-scoring items by category for the digest highlights section."""
     grouped: dict[str, list[DigestItem]] = defaultdict(list)
     for item in _sort_digest_items(items):
         grouped[item.category].append(item)
@@ -188,6 +192,7 @@ def _build_highlights(items: list[DigestItem], top_n_per_category: int) -> list[
 
 
 def _render_high_value_item(item: DigestItem) -> list[str]:
+    """Render one high-value digest item as a markdown bullet block."""
     lines = [
         f"- **{item.title}**",
         f"  - score: {item.insight_score}",
@@ -202,6 +207,7 @@ def _render_high_value_item(item: DigestItem) -> list[str]:
 
 
 def _sort_digest_items(items: list[DigestItem]) -> list[DigestItem]:
+    """Sort digest items by score, confidence, and stable identity for deterministic output."""
     return sorted(
         items,
         key=lambda item: (
@@ -219,10 +225,12 @@ def _digest_title(domain: str, digest_date: date) -> str:
 
 
 def _ensure_utc(value: datetime) -> datetime:
+    """Normalize naive or local datetimes into UTC for digest metadata."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
 def beijing_digest_date(value: datetime) -> date:
+    """Convert a UTC timestamp into the digest date used for Beijing-local publication."""
     return value.astimezone(timezone(timedelta(hours=8))).date()

@@ -1,7 +1,7 @@
 # Model Routing SPEC
 
-> Status: **Partially verified** — model IDs available on NVIDIA, rate limits and JSON reliability pending
-> Updated: 2026-05-26
+> Status: **Partially verified** — NVIDIA Stage 1 JSON + production concurrency verified; Sub2API and explicit 429 shape still pending
+> Updated: 2026-05-31
 
 ## 1. Core Principle
 
@@ -11,7 +11,7 @@ Do not assume any provider is unlimited or permanently free. Even on NVIDIA free
 
 | Provider | Role | Status |
 |---|---|---|
-| NVIDIA NIM | Primary | API key working, model IDs listed; rate limits pending |
+| NVIDIA NIM | Primary | API key working, model IDs listed, Stage 1 JSON samples + concurrency 3 verified |
 | Sub2API | Fallback | Available but not yet tested for these models |
 
 Base URL: `https://integrate.api.nvidia.com/v1` (OpenAI-compatible).
@@ -74,9 +74,9 @@ Record actual provider and model in the item's stage-specific provider/model fie
 - [x] NVIDIA API key works
 - [x] deepseek-v4-flash available
 - [x] deepseek-v4-pro available
-- [ ] Confirm rate limit behavior (429 response shape)
-- [ ] Confirm max concurrent requests allowed
-- [ ] Test JSON output reliability on 5 sample items
+- [x] Confirm production concurrency behavior — Stage 1 concurrency 3 completed 3/3 in 84.5s
+- [ ] Confirm hard rate-limit behavior (429 response shape) — 10-concurrency stress completed 10/10 in 164.8s, no 429 observed
+- [x] Test JSON output reliability on sample items — latest `ai_gate_test.py` passed Stage-1 JSON samples; gate subprocess timeout allows STAGE1_TIMEOUT_S plus process cleanup grace
 - [ ] Test Sub2API fallback
 
 ## 8. Open Questions

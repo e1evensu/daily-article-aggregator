@@ -26,6 +26,7 @@ def apply_source_stats(stats: dict[str, Any], source_id: str, source_stats: dict
 
 
 def compute_progress(stats: dict[str, Any] | None) -> float:
+    """Estimate overall run progress for the dashboard progress bar."""
     if not stats:
         return 0.0
 
@@ -63,6 +64,7 @@ def digest_result(
 
 
 def aggregate_digest_status(security: dict[str, Any] | None, ai: dict[str, Any] | None) -> str:
+    """Collapse per-domain digest results into one overall digest status."""
     results = [result for result in (security, ai) if result is not None]
     if not results:
         return "pending"
@@ -103,6 +105,7 @@ def update_digest_stats(
 
 
 def decide_final_run_status(stats: dict[str, Any], *, fatal_error: str | None = None, cleanup_completed: bool = True) -> str:
+    """Choose the final run status from source, analysis, digest, and cleanup outcomes."""
     if fatal_error:
         return "failed"
     if not cleanup_completed:
@@ -137,6 +140,7 @@ def decide_final_run_status(stats: dict[str, Any], *, fatal_error: str | None = 
 
 
 def _ratio(done: int, total: int) -> float:
+    """Safely divide two counters for progress calculations."""
     if not total:
         return 0.0
     return done / total

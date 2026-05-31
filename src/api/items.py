@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.contracts import decode_score_cursor, encode_score_cursor, raise_api_error, success_envelope
+from src.api.contracts import (
+    decode_score_cursor,
+    encode_score_cursor,
+    raise_api_error,
+    success_envelope,
+    visible_item_filters,
+)
 from src.api.deps import get_db, require_api_token
 from src.config import settings
 from src.models.item import Item
@@ -29,7 +35,8 @@ async def list_items(
     limit: int = Query(default=settings.api_default_limit, le=settings.api_max_limit),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Item)
+    """List normalized items with cursor pagination and optional search/filter predicates."""
+    stmt = select(Item).where(*visible_item_filters())
 
     if domain and domain != "all":
         stmt = stmt.where(Item.domain == domain)
@@ -83,7 +90,13 @@ async def list_items(
 
 @router.get("/items/{item_id}")
 async def get_item(item_id: str, request: Request, db: AsyncSession = Depends(get_db)):
-    item = await db.get(Item, item_id)
+    result = await db.execute(
+        select(Item).where(
+            Item.id == item_id,
+            *visible_item_filters(),
+        )
+    )
+    item = result.scalar_one_or_none()
     if not item:
         raise_api_error("not_found", "Item not found", 404)
     return success_envelope(_serialize_item(item), request=request)

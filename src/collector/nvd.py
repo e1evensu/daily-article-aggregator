@@ -13,6 +13,7 @@ log = logging.getLogger(__name__)
 
 class NVDCollector(BaseCollector):
     async def fetch(self, since: datetime | None = None) -> list[RawItem]:
+        """Fetch recent NVD CVEs and project them into RawItem records."""
         if not since:
             since = datetime.now(timezone.utc) - timedelta(
                 hours=int(self.config.get("default_since_hours", settings.collector_default_since_hours))

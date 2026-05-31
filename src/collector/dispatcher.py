@@ -24,6 +24,7 @@ class SourceFetchResult:
     duration_s: float = 0.0
 
     def stats_entry(self) -> dict[str, Any]:
+        """Build the per-source stats fragment stored on the run record."""
         data: dict[str, Any] = {"status": self.status, "items": len(self.items), "duration_s": round(self.duration_s, 3)}
         if self.error:
             data["error"] = self.error
@@ -56,6 +57,7 @@ async def collect_sources(
     since: datetime | None = None,
     collector_factory=create_collector,
 ) -> list[SourceFetchResult]:
+    """Fetch all eligible sources serially and return their normalized fetch results."""
     results = []
     for source in sources:
         if not _should_fetch(source):
@@ -71,6 +73,7 @@ async def fetch_source(
     since: datetime | None = None,
     collector_factory=create_collector,
 ) -> SourceFetchResult:
+    """Fetch one source and normalize failures into a structured result."""
     started = time.monotonic()
     try:
         collector = collector_factory(source)
@@ -97,6 +100,7 @@ async def fetch_source(
 
 
 def classify_fetch_error(exc: Exception) -> str:
+    """Map collector exceptions into the stable source error categories."""
     if isinstance(exc, httpx.TimeoutException):
         return "source_timeout"
     if isinstance(exc, httpx.HTTPStatusError):
@@ -113,6 +117,7 @@ def collection_stats(results: list[SourceFetchResult]) -> dict[str, dict[str, An
 
 
 def _should_fetch(source: Any) -> bool:
+    """Return whether a source is active, approved, and not disabled."""
     return (
         getattr(source, "is_active", False)
         and getattr(source, "status", None) == "approved"
@@ -121,6 +126,7 @@ def _should_fetch(source: Any) -> bool:
 
 
 def _mark_source_success(source: Any) -> None:
+    """Update source health fields after a successful fetch."""
     source.health = "good"
     source.consecutive_failures = 0
     source.last_fetch_at = datetime.now(timezone.utc)
@@ -128,6 +134,7 @@ def _mark_source_success(source: Any) -> None:
 
 
 def _mark_source_failure(source: Any, error: str) -> None:
+    """Update source health fields after a failed fetch attempt."""
     failures = int(getattr(source, "consecutive_failures", 0) or 0) + 1
     source.consecutive_failures = failures
     source.health = "disabled" if failures >= settings.collector_failure_disable_threshold else "degraded"

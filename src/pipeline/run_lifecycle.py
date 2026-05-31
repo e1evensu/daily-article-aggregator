@@ -23,11 +23,13 @@ class LifecycleResult:
 
 
 async def acquire_run_lock(session: AsyncSession) -> bool:
+    """Try to acquire the MySQL advisory lock guarding the daily pipeline."""
     result = await session.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": RUN_LOCK_NAME})
     return result.scalar() == 1
 
 
 async def release_run_lock(session: AsyncSession) -> None:
+    """Release the MySQL advisory lock guarding the daily pipeline."""
     await session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": RUN_LOCK_NAME})
 
 
@@ -44,6 +46,7 @@ async def find_latest_succeeded_run(session: AsyncSession) -> Run | None:
 
 
 async def compute_run_window(session: AsyncSession, now: datetime) -> tuple[datetime, datetime]:
+    """Compute the next pipeline window from the last successful run or a default lookback."""
     latest = await find_latest_succeeded_run(session)
     window_end = _ensure_utc(now)
     if latest:
@@ -74,6 +77,7 @@ def create_run_record(
 
 
 def mark_run_finished(run: Run, *, status: str, finished_at: datetime, stats_json: dict, error_json: dict | None = None) -> None:
+    """Finalize a run record with terminal status, timestamps, stats, and optional error data."""
     run.status = status
     run.finished_at = _ensure_utc(finished_at)
     run.stats_json = stats_json
@@ -91,6 +95,7 @@ async def run_with_lifecycle(
     source_ids: list[str],
     runner: Callable[[Run], Awaitable[tuple[str, dict]]],
 ) -> LifecycleResult:
+    """Wrap pipeline execution with lock management, stale-run handling, and run persistence."""
     locked = await acquire_run_lock(session)
     if not locked:
         return LifecycleResult(status="skipped", skipped_reason="lock_unavailable")
@@ -136,6 +141,7 @@ async def run_with_lifecycle(
 
 
 def _ensure_utc(value: datetime) -> datetime:
+    """Normalize naive or local datetimes into UTC before persistence."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)

@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str
     redis_url: str = ""
-    source_seed_path: str = ""
+    source_seed_path: str = "config/sources.json"
 
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
@@ -16,16 +16,19 @@ class Settings(BaseSettings):
     stage1_retry_backoff_s: str = "2,4"
     stage1_temperature: float = 0.1
     stage1_max_tokens: int = 2048
+    stage1_concurrency: int = 3
     stage2_timeout_s: float = 300.0
     stage2_retries: int = 2
     stage2_retry_backoff_s: str = "5,10"
     stage2_temperature: float = 0.2
     stage2_max_tokens: int = 4096
+    stage2_concurrency: int = 1
     digest_timeout_s: float = 300.0
     digest_retries: int = 2
     digest_retry_backoff_s: str = "2,4"
     digest_temperature: float = 0.3
     digest_max_tokens: int = 1024
+    digest_concurrency: int = 1
     digest_overview_max_items: int = 20
     sub2api_base_url: str = ""
     sub2api_api_key: str = ""
@@ -48,6 +51,15 @@ class Settings(BaseSettings):
     digest_domains: str = "security,ai"
     realtime_push_threshold: int = 85
 
+    # Deep-analysis (pi Finder) stage. The pipeline only *enqueues* qualifying
+    # security items (cheap DB rows); a separate worker runs the slow,
+    # RPM-limited pi agent serially. min_score filters which GHSA items
+    # qualify; max_per_run caps queue growth per daily run.
+    deep_analysis_enabled: bool = True
+    deep_analysis_min_score: int = 0
+    deep_analysis_max_per_run: int = 20
+    deep_analysis_stale_claim_timeout_hours: int = 6
+
     retention_below_10: int = 0
     retention_below_30: int = 5
     retention_below_50: int = 10
@@ -65,6 +77,7 @@ class Settings(BaseSettings):
     collector_failure_disable_threshold: int = 3
     collector_github_per_page: int = 100
     collector_hn_max_items: int = 50
+    collector_hn_max_concurrency: int = 10
     collector_nvd_results_per_page: int = 2000
     api_command: str = "uvicorn src.main:app"
 
@@ -79,6 +92,7 @@ class Settings(BaseSettings):
     database_pool_size: int = 5
     database_max_overflow: int = 5
     database_pool_recycle_s: int = 3600
+    database_verify_tls: bool = False
 
     hexo_posts_dir: str = "/opt/blog/source/_posts"
 

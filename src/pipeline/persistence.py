@@ -28,6 +28,7 @@ async def persist_normalized_items(
     *,
     source_authority_by_id: dict[str, str],
 ) -> PersistResult:
+    """Insert new normalized items and merge cross-source duplicates in place."""
     inserted: list[Item] = []
     duplicates = 0
     errors = 0
@@ -50,6 +51,7 @@ async def persist_normalized_items(
 
 
 async def find_item_by_dedup_hash(session: AsyncSession, dedup_hash: str) -> Item | None:
+    """Look up an existing item by the dedup hash used across collectors."""
     result = await session.execute(select(Item).where(Item.dedup_hash == dedup_hash))
     return result.scalar_one_or_none()
 
@@ -79,6 +81,7 @@ def merge_duplicate_occurrence(
     duplicate: NormalizedItem,
     source_authority_by_id: dict[str, str],
 ) -> None:
+    """Attach a second source occurrence to an existing item and refresh confidence."""
     if existing.source_id == duplicate.source_id:
         return
 
@@ -97,10 +100,12 @@ def merge_duplicate_occurrence(
 
 
 def source_authority_map(sources: list[Any]) -> dict[str, str]:
+    """Index source authority values by source id for later confidence recomputation."""
     return {source.id: source.authority for source in sources}
 
 
 def apply_stage1_outcome(item: Item, outcome: Stage1Outcome) -> None:
+    """Persist stage-1 model output and update the item's analysis fields."""
     item.stage1_model = outcome.model
     item.stage1_provider = outcome.provider
     item.stage1_prompt_version = outcome.prompt_version
@@ -121,6 +126,7 @@ def apply_stage1_outcome(item: Item, outcome: Stage1Outcome) -> None:
 
 
 def apply_stage2_outcome(item: Item, outcome: Stage2Outcome) -> None:
+    """Persist stage-2 model output and promote the item to deep-analysis state."""
     item.stage2_model = outcome.model
     item.stage2_provider = outcome.provider
     item.stage2_prompt_version = outcome.prompt_version

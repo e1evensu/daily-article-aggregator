@@ -36,6 +36,7 @@ def oss_config_from_settings() -> OSSConfig:
 
 
 def write_hexo_post(artifact: DigestArtifact, posts_dir: str | Path) -> Path:
+    """Write the rendered digest markdown into the Hexo posts directory."""
     target_dir = Path(posts_dir)
     if not target_dir.exists() or not target_dir.is_dir():
         raise OutputError("hexo_write_error", f"Hexo posts directory does not exist: {target_dir}")
@@ -53,6 +54,7 @@ def digest_oss_key(artifact: DigestArtifact, prefix: str = "intelligence/digests
 
 
 def upload_digest_backup(artifact: DigestArtifact, config: OSSConfig, bucket_factory=None) -> str:
+    """Upload the digest markdown to OSS and return its public URL."""
     key = digest_oss_key(artifact, config.prefix)
     try:
         bucket = bucket_factory(config) if bucket_factory else _create_bucket(config)

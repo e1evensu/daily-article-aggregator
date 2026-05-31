@@ -41,6 +41,7 @@ class OpenAICompatibleClient:
 
     @classmethod
     def nvidia_from_settings(cls) -> OpenAICompatibleClient:
+        """Build a client pointed at the configured NVIDIA-compatible endpoint."""
         from src.config import settings
 
         return cls(
@@ -50,6 +51,7 @@ class OpenAICompatibleClient:
         )
 
     async def aclose(self) -> None:
+        """Close the underlying async HTTP client."""
         await self._client.aclose()
 
     async def complete(
@@ -63,6 +65,7 @@ class OpenAICompatibleClient:
         retries: int,
         retry_backoff_s: tuple[float, ...],
     ) -> ChatCompletionResult:
+        """Request one completion and normalize provider quirks around token fields."""
         base_payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -101,6 +104,7 @@ class OpenAICompatibleClient:
         retries: int,
         retry_backoff_s: tuple[float, ...],
     ) -> dict[str, Any]:
+        """Send a completion request with retry/backoff handling."""
         for attempt in range(retries + 1):
             try:
                 return await self._post_once(payload, timeout_s)
@@ -111,6 +115,7 @@ class OpenAICompatibleClient:
         raise AIClientError("model_provider_error", "completion retries exhausted")
 
     async def _post_once(self, payload: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+        """Send one raw completion request and normalize HTTP errors."""
         try:
             response = await self._client.post("/chat/completions", json=payload, timeout=timeout_s)
         except httpx.TimeoutException as exc:
@@ -132,6 +137,7 @@ class OpenAICompatibleClient:
 
 
 def _extract_message_content(data: dict[str, Any]) -> str:
+    """Extract the assistant message body from an OpenAI-compatible completion response."""
     try:
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -143,6 +149,7 @@ def _extract_message_content(data: dict[str, Any]) -> str:
 
 
 def _is_token_parameter_rejection(exc: AIClientError, token_field: str | None) -> bool:
+    """Detect provider errors caused by unsupported max-token parameter names."""
     if exc.category != "model_provider_error" or exc.retryable or not token_field:
         return False
     message = str(exc).lower()
@@ -150,6 +157,7 @@ def _is_token_parameter_rejection(exc: AIClientError, token_field: str | None) -
 
 
 def _backoff_for_attempt(backoff_s: tuple[float, ...], attempt: int) -> float:
+    """Pick the configured retry backoff for the current attempt index."""
     if not backoff_s:
         return 0.0
     return backoff_s[min(attempt, len(backoff_s) - 1)]

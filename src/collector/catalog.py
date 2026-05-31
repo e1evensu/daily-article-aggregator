@@ -50,6 +50,10 @@ def catalog_source_ids(path: str | Path | None = None) -> set[str]:
     return set(catalog_by_id(path))
 
 
+def catalog_approved_source_ids(path: str | Path | None = None) -> set[str]:
+    return {entry.id for entry in load_source_catalog(path) if entry.status == "approved"}
+
+
 def as_source_model(entry: SourceCatalogEntry) -> Source:
     return Source(
         id=entry.id,
@@ -71,12 +75,31 @@ def as_source_model(entry: SourceCatalogEntry) -> Source:
 async def seed_candidate_sources(session: AsyncSession, path: str | Path | None = None) -> int:
     count = 0
     for entry in load_source_catalog(path):
-        await session.merge(as_source_model(entry))
+        existing = await session.get(Source, entry.id)
+        if existing is None:
+            session.add(as_source_model(entry))
+        else:
+            _apply_catalog_entry(existing, entry)
         count += 1
     return count
 
 
+def _apply_catalog_entry(source: Source, entry: SourceCatalogEntry) -> None:
+    """Copy mutable catalog fields onto an existing source row."""
+    source.name = entry.name
+    source.domain = entry.domain
+    source.type = entry.type
+    source.url = entry.url
+    source.auth_mode = entry.auth_mode
+    source.fetch_strategy = entry.fetch_strategy
+    source.authority = entry.authority
+    source.status = entry.status
+    source.config_json = entry.config_json or None
+    source.is_active = entry.is_active
+
+
 def _entry_from_dict(record: Any) -> SourceCatalogEntry:
+    """Validate one raw JSON catalog record and convert it into a typed entry."""
     if not isinstance(record, dict):
         raise ValueError("source catalog entries must be objects")
     return SourceCatalogEntry(
@@ -96,6 +119,7 @@ def _entry_from_dict(record: Any) -> SourceCatalogEntry:
 
 
 def _required_str(record: dict[str, Any], key: str) -> str:
+    """Require one non-empty string field in a source catalog record."""
     value = record.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"source catalog entry requires non-empty {key}")

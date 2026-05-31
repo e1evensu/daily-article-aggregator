@@ -27,4 +27,26 @@ Current SPECs are draft review documents. They are meant for analysis before imp
 - Deployment: `.spec/deployment.md`
 - Review checklist: `.spec/review-checklist.md`
 - Architecture decisions: `docs/decisions/`
+- Current technical debt review: `docs/TECH_DEBT_REVIEW.md`
 - Reference drop zone: `docs/references/`
+
+## Comment Policy
+
+The repository keeps comment policy in `docs/ARCHITECTURE.md`.
+
+- `make check-comments`: run the lightweight repository comment-policy check
+- `make check-migrations`: verify numbered SQL migration naming and discovery
+- `make check-frontend`: enforce the current front-end window-export whitelist
+- `make lint`: runs Ruff plus the comment-policy check
+- `make verify`: runs lint, tests, and compile checks
+
+The policy intentionally targets active Python code and root scripts first. It
+does not require every function to have a docstring, and it rejects the most
+obvious mechanical `Return ...` style docstrings on non-test code.
+
+## Runtime Notes
+
+- `DATABASE_VERIFY_TLS=false` keeps the current cross-border deployment behavior:
+  encrypt MySQL traffic but accept the service's self-signed certificate.
+- Set `DATABASE_VERIFY_TLS=true` only after the runtime can present a verifiable
+  certificate chain and hostname.

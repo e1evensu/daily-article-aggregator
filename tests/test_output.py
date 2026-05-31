@@ -15,6 +15,7 @@ from src.pipeline.output import (
 
 
 def _artifact() -> DigestArtifact:
+    """Build a minimal digest artifact for output-layer tests."""
     return DigestArtifact(
         id="2026-05-26:security",
         date=date(2026, 5, 26),

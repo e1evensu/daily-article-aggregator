@@ -1,7 +1,7 @@
 # Review Checklist
 
-> Status: **Updated** — core SPEC aligned; production/frontend gates still open
-> Updated: 2026-05-26
+> Status: **Updated** — core SPEC aligned; production gate still open
+> Updated: 2026-05-31
 
 ## 1. Resolved Contradictions
 
@@ -40,15 +40,11 @@
 
 | Item | Status | Owner |
 |---|---|---|
-| NVIDIA rate limit | Test empirically | Implementation |
+| Stage 1 JSON long-tail latency | Closed by `ai_gate_test.py` hard-timeout retry; latest gate passed sample JSON + concurrency 3 | Implementation |
 | HN keyword filter list | Needs definition | Implementation |
 | Sub2API fallback | Not tested | Phase 1 or deferred |
-| Approved source set | Candidate list exists, approvals pending | Implementation |
-| styles.css | 前端原型缺失 styles.css 文件 | 前端 |
-| Frontend fixture source IDs | Uses legacy short IDs; must switch to catalog long IDs | 前端 |
-| Frontend analysis fields | Uses `analysis_model`/`prompt_version`; must switch to `stage1_*` and `stage2_*` fields | 前端 |
-| Frontend `also_seen_in` shape | Uses string array; must use occurrence objects `{source_id,url,seen_at}` | 前端 |
-| Source status visibility | API/frontend must expose `candidate/trial/approved`; do not label all sources approved | API/前端 |
+| Approved source set | 7 public sources approved and synced; internal sources + arXiv remain candidate | Implementation |
+| arXiv source quality | Current RSS check returned 0 parseable entries because the channel was empty | Implementation |
 | SecHub/aihot 服务部署 | 服务未上线，tunnel 未配置 | 基础设施 |
 
 ## 3. Implementation Gate
@@ -56,7 +52,7 @@
 Scaffolding gate is open:
 
 - [x] Phase 1 scope agreed (security + AI, no dashboard/social/finance)
-- [x] Source catalog has candidates (10 sources listed)
+- [x] Source catalog has canonical Phase 1 sources (7 approved public + 3 candidate)
 - [x] Model IDs available on NVIDIA
 - [x] Infra deployed (MySQL, Redis, tunnels, .env)
 - [x] Schema reviewed and simplified
@@ -72,18 +68,33 @@ Scaffolding gate is open:
 
 Production-run gate is still closed:
 
-- [ ] At least 3 sources approved and reachable from 38
-- [ ] Stage 1 JSON output tested on sample items
-- [ ] NVIDIA rate-limit behavior tested
-- [ ] Hexo direct-write path verified (Docker volume mount + permissions)
+- [x] At least 3 sources approved and reachable from 38 — `verify_feeds.py --min-ok 3 --timeout-s 10` passed 7/8 public sources after HN concurrent fetch fix
+- [x] Stage 1 JSON output tested on sample items — `ai_gate_test.py` passed sample JSON checks with hard-timeout retry
+- [x] NVIDIA rate-limit behavior tested — Stage 1 production concurrency 3 passed; 10-concurrency stress completed but was slow
+- [x] Hexo direct-write path verified — `write_hexo_post` wrote/read/removed a temporary probe in `/opt/blog/source/_posts/`
+- [x] Limited manual dry-run smoke — `run_pipeline.py --dry-run --max-items 2` passed collect → Stage 1 4/4 → Stage 2 1/1 → security + AI digests with DB rollback, temp Hexo output, OSS disabled
+- [x] Docker compose release build/import smoke — `make verify-release` runs `docker-compose config --quiet`, `docker-compose build`, image `run_pipeline.py --help`, and env-backed image import of `src.main` / `src.scheduler.jobs`; passed
+- [x] Release image API runtime smoke — `make verify-release` started a temporary host-network container on `127.0.0.1:18100`, passed `/health` and DB-backed `/api/v1/sources/security_nvd_cve`, then removed it
+- [ ] Commit-style manual run verified persisted items + digest
+- [ ] 48h stability run
+- [ ] Docker compose runtime cutover
 - [ ] SecHub/aihot tunnel configured (if these sources are needed for first run)
+
+Production gate tooling is ready:
+
+- [x] `verify_feeds.py` uses real collectors, prints per-source status, and hard-times out each source subprocess
+- [x] `ai_gate_test.py` exits non-zero if Stage 1 JSON or production concurrency checks fail
+- [x] `run_pipeline.py --dry-run --max-items N` provides a bounded per-domain manual smoke path that rolls back DB changes, writes Hexo output to a temp dir, and disables OSS upload
+- [x] `make verify-release` verifies the Docker release path: excludes `.env` from build context, builds an image, preserves `--loop asyncio`, exposes CLI help without requiring production env, imports runtime modules with `.env`, serves API traffic from the image on a temporary port, and cleans up the container
+- [x] Non-Phase-1 source proposals are deferred and inactive by default, not auto-approved
+- [x] API list/detail/stats queries are constrained to Phase 1 domains and canonical catalog source IDs, so legacy DB rows do not leak through current endpoints
 
 Frontend gate is closed:
 
-- [ ] `src/front/styles.css` exists and page renders without missing assets
-- [ ] Fixture source IDs match `.spec/source-catalog.md`
-- [ ] Fixture item fields match `.spec/data-model.md` and `.spec/api.md`
-- [ ] Sources view displays source `status` separately from health
-- [ ] Digest view uses `summary` / `highlights_json` field names
+- [x] `src/front/styles.css` exists and page renders without missing assets
+- [x] Fixture source IDs match `.spec/source-catalog.md`
+- [x] Fixture item fields match `.spec/data-model.md` and `.spec/api.md`
+- [x] Sources view displays source `status` separately from health
+- [x] Digest view uses `summary` / `highlights_json` field names
 
 Backend scaffolding can proceed against the SPECs. Scheduled production runs should wait for the production-run gate.

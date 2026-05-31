@@ -1,7 +1,7 @@
 # Source Catalog SPEC
 
-> Status: **Reviewed** — simplified approval process
-> Updated: 2026-05-26
+> Status: **Partially approved** — 7 public sources approved after feed gate; internal sources and arXiv remain candidate
+> Updated: 2026-05-31
 
 ## 1. Principle
 
@@ -33,17 +33,17 @@ Source IDs in this catalog are canonical API/database IDs. Use the long form exa
 | `twitter_x` | No | Deferred, anti-ban review needed |
 | `wechat` | No | Rejected |
 
-## 4. Candidate Phase 1 Sources
+## 4. Phase 1 Sources
 
 ### Security
 
 | Source ID | Name | Type | Authority | Status |
 |---|---|---|---|---|
-| `security_nvd_cve` | NVD CVE Feed | api | official | candidate |
-| `security_github_advisories` | GitHub Security Advisories | github_api | official | candidate |
-| `security_portswigger` | PortSwigger Research | rss | authoritative | candidate |
-| `security_project_zero` | Project Zero Blog | rss | authoritative | candidate |
-| `security_exploitdb` | Exploit-DB | rss | authoritative | candidate |
+| `security_nvd_cve` | NVD CVE Feed | api | official | approved |
+| `security_github_advisories` | GitHub Security Advisories | github_api | official | approved |
+| `security_portswigger` | PortSwigger Research | rss | authoritative | approved |
+| `security_project_zero` | Project Zero Blog | rss | authoritative | approved |
+| `security_exploitdb` | Exploit-DB | rss | authoritative | approved |
 | `security_sechub` | SecHub API | internal_api | authoritative | candidate |
 
 ### AI / Tech
@@ -51,9 +51,9 @@ Source IDs in this catalog are canonical API/database IDs. Use the long form exa
 | Source ID | Name | Type | Authority | Status |
 |---|---|---|---|---|
 | `ai_aihot` | aihot API | internal_api | authoritative | candidate |
-| `ai_hackernews` | Hacker News Top | api | authoritative | candidate |
+| `ai_hackernews` | Hacker News Top | api | authoritative | approved |
 | `ai_arxiv` | arXiv cs.AI + cs.CR | rss | official | candidate |
-| `ai_openai_blog` | OpenAI Blog | rss | official | candidate |
+| `ai_openai_blog` | OpenAI Blog | rss | official | approved |
 
 ### Deferred
 

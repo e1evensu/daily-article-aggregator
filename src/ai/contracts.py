@@ -56,6 +56,7 @@ class PreparedContent:
 
 
 def prepare_content_for_model(content_text: str | None) -> PreparedContent:
+    """Trim oversized content while preserving enough head/tail context for the model."""
     if not content_text:
         return PreparedContent(content_text=content_text, content_truncated=False)
     if len(content_text) <= 4000:
@@ -67,6 +68,7 @@ def prepare_content_for_model(content_text: str | None) -> PreparedContent:
 
 
 def parse_stage1_response(text: str) -> Stage1Analysis:
+    """Parse and validate the stage-1 JSON response emitted by the model."""
     payload = _extract_json_object(text)
     score = _coerce_score(payload.get("insight_score"))
     summary = _require_string(payload, "summary_zh")
@@ -89,6 +91,7 @@ def parse_stage1_response(text: str) -> Stage1Analysis:
 
 
 def parse_stage2_response(text: str, source_authority: str, also_seen_in: list[dict[str, Any]] | None) -> Stage2Analysis:
+    """Parse and validate the stage-2 JSON response, deriving confidence locally."""
     payload = _extract_json_object(text)
     trend_signal = payload.get("trend_signal")
     if trend_signal is not None:
@@ -105,11 +108,13 @@ def parse_stage2_response(text: str, source_authority: str, also_seen_in: list[d
 
 
 def parse_digest_overview_response(text: str) -> DigestOverviewAnalysis:
+    """Parse and validate the digest overview JSON response emitted by the model."""
     payload = _extract_json_object(text)
     return DigestOverviewAnalysis(overview_zh=_require_string(payload, "overview_zh"))
 
 
 def derive_confidence(source_authority: str, also_seen_in: list[dict[str, Any]] | None) -> str:
+    """Derive confidence from source authority and corroborating source count."""
     is_official = source_authority == "official"
     corroboration_count = len(also_seen_in or [])
 
@@ -123,6 +128,7 @@ def derive_confidence(source_authority: str, also_seen_in: list[dict[str, Any]] 
 
 
 def compute_expires_at(insight_score: int, analyzed_at: datetime) -> datetime | None:
+    """Compute item expiry from the configured retention policy and insight score."""
     from src.config import settings
 
     analyzed_at = _ensure_utc(analyzed_at)
@@ -155,6 +161,7 @@ def retention_bucket(insight_score: int) -> str:
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
+    """Extract the first JSON object from a raw model response."""
     cleaned = _strip_code_fence(text.strip())
     try:
         parsed = json.loads(cleaned)
@@ -167,6 +174,7 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 
 def _strip_code_fence(text: str) -> str:
+    """Remove a surrounding markdown code fence if the model wrapped its JSON."""
     if not text.startswith("```"):
         return text
     lines = text.splitlines()
@@ -176,6 +184,7 @@ def _strip_code_fence(text: str) -> str:
 
 
 def _scan_json_object(text: str) -> dict[str, Any]:
+    """Scan free-form text for the first decodable JSON object."""
     decoder = json.JSONDecoder()
     for index, char in enumerate(text):
         if char != "{":
@@ -199,6 +208,7 @@ def _coerce_score(value: Any) -> int:
 
 
 def _coerce_tags(value: Any) -> list[str]:
+    """Normalize the model's tags field into a capped list of non-empty strings."""
     if value is None:
         return []
     if not isinstance(value, list):
@@ -212,6 +222,7 @@ def _coerce_tags(value: Any) -> list[str]:
 
 
 def _require_string(payload: dict[str, Any], key: str) -> str:
+    """Require one non-empty string field from the parsed JSON payload."""
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
         raise AnalysisParseError(f"{key} must be a non-empty string")
@@ -219,6 +230,7 @@ def _require_string(payload: dict[str, Any], key: str) -> str:
 
 
 def _ensure_utc(value: datetime) -> datetime:
+    """Normalize naive or local datetimes into UTC before persistence."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)

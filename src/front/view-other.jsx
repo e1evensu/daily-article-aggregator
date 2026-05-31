@@ -1,9 +1,42 @@
 // Digest reader / Runs monitor / Sources / Stats
 const { useState: useStateV, useMemo: useMemoV } = React;
+import {
+  Confidence,
+  DomainBadge,
+  Health,
+  Icon,
+  RunStatus,
+  ScoreNum,
+  SourceIcon,
+  SourcePill,
+  Trend,
+  fmtAgo,
+  fmtDur,
+} from './ui.jsx';
+import {
+  buildById,
+} from './ui.jsx';
+import {
+  categoryList,
+  categoryScoreMatrix,
+  getActiveRun,
+  modelUsage,
+  retentionBuckets,
+  safeRatio,
+  scoreHistogram,
+  summarizeItems,
+  summarizeSources,
+} from './selectors.js';
+import { filterByScoreRange } from './ui.jsx';
 
 // ============ DIGEST ============
-const DigestView = ({ digest, items, sources, now, onOpenItem }) => {
-  const byId = (id) => items.find(i => i.id === id);
+export const DigestView = ({ digest, items, sources, now, onOpenItem }) => {
+  const itemById = useMemoV(() => buildById(items), [items]);
+  const sourceById = useMemoV(() => buildById(sources), [sources]);
+  const lowerValueItems = useMemoV(
+    () => items.filter(i => i.domain === 'security' && i.insight_score >= 40 && i.insight_score < 75),
+    [items],
+  );
   return (
     <div className="view">
       <div className="digest-wrap">
@@ -35,15 +68,15 @@ const DigestView = ({ digest, items, sources, now, onOpenItem }) => {
           </div>
         </div>
 
-        {digest.categories.map(cat => (
+        {(digest.highlights_json || digest.categories).map(cat => (
           <div key={cat.name} className="digest-cat">
             <div className="digest-cat-head">
               <span className="digest-cat-name">{cat.label}</span>
               <span className="digest-cat-count">{cat.count} · {cat.name}</span>
             </div>
             {cat.item_ids.map((id, idx) => {
-              const it = byId(id); if (!it) return null;
-              const src = sources.find(s => s.id === it.source_id);
+              const it = itemById[id]; if (!it) return null;
+              const src = sourceById[it.source_id];
               return (
                 <div key={id} className="digest-item" onClick={() => onOpenItem(it)}>
                   <div className="digest-item-rank">0{idx + 1}</div>
@@ -81,7 +114,7 @@ const DigestView = ({ digest, items, sources, now, onOpenItem }) => {
             <span className="digest-cat-count">score 40–74 · summary only</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 0 0' }}>
-            {items.filter(i => i.domain === 'security' && i.insight_score >= 40 && i.insight_score < 75).map(it => (
+            {lowerValueItems.map(it => (
               <div key={it.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 10, alignItems: 'center', padding: '6px 0', fontSize: 13 }} onClick={() => onOpenItem(it)}>
                 <ScoreNum value={it.insight_score} />
                 <span style={{ color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</span>
@@ -93,17 +126,18 @@ const DigestView = ({ digest, items, sources, now, onOpenItem }) => {
 
         <div style={{ marginTop: 40, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>
           <Icon name="link" size={11} />
-          <span>oss://intel-blog/2026/05/{digest.id}.md</span>
+          <span>{digest.hexo_path}</span>
+          <a href={digest.oss_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-text)' }}>{digest.oss_url}</a>
           <span style={{ marginLeft: 'auto' }}>id · {digest.id}</span>
         </div>
       </div>
     </div>
   );
 };
-window.DigestView = DigestView;
 
 // ============ RUNS ============
 const stepStatus = (run, key) => {
+  // Derive a coarse health state from nested run stats so cards share one status rule.
   const s = run.stats[key]; if (!s) return 'pending';
   if (s.failed > 0 && s.succeeded === 0) return 'fail';
   if (s.running > 0) return 'running';
@@ -112,6 +146,7 @@ const stepStatus = (run, key) => {
 };
 
 const RunCard = ({ run, sources, now }) => {
+  const sourceById = useMemoV(() => buildById(sources), [sources]);
   const ingest = run.stats.sources ? Object.values(run.stats.sources) : [];
   const ingested = ingest.reduce((a, b) => a + (b.items || 0), 0);
   const failedSrc = ingest.filter(s => s.status === 'failed').length;
@@ -174,7 +209,7 @@ const RunCard = ({ run, sources, now }) => {
       {run.stats.sources && Object.keys(run.stats.sources).length > 0 && (
         <div className="run-sources-grid">
           {Object.entries(run.stats.sources).map(([id, s]) => {
-            const src = sources.find(x => x.id === id);
+            const src = sourceById[id];
             const cls = s.status === 'succeeded' ? 'ok' : s.status === 'failed' ? 'fail' : 'warn';
             return (
               <div key={id} className="run-source-row">
@@ -191,8 +226,11 @@ const RunCard = ({ run, sources, now }) => {
   );
 };
 
-const RunsView = ({ runs, sources, now }) => {
-  const current = runs[0];
+export const RunsView = ({ runs, sources, now }) => {
+  const current = getActiveRun(runs);
+  if (!current) {
+    return <div className="empty">No pipeline runs yet.</div>;
+  }
   const totalItems = current.stats.stage1.total;
   const failedItems = current.stats.stage1.failed;
   const stage2 = current.stats.stage2;
@@ -228,10 +266,10 @@ const RunsView = ({ runs, sources, now }) => {
     </div>
   );
 };
-window.RunsView = RunsView;
 
 // ============ SOURCES ============
 const Spark = ({ data, max }) => {
+  // Render compact per-source activity bars without introducing a chart dependency.
   const m = max || Math.max(...data, 1);
   return (
     <div className="spark">
@@ -242,24 +280,24 @@ const Spark = ({ data, max }) => {
   );
 };
 
-const SourcesView = ({ sources, items, now }) => {
-  const counts = useMemoV(() => {
-    const c = {};
-    items.forEach(i => { c[i.source_id] = (c[i.source_id] || 0) + 1; });
-    return c;
-  }, [items]);
-  const maxSpark = Math.max(...sources.flatMap(s => s.spark));
+export const SourcesView = ({ sources, items, now }) => {
+  const summary = useMemoV(() => summarizeSources(sources), [sources]);
+  if (sources.length === 0) {
+    return <div className="empty">No sources available.</div>;
+  }
   return (
     <div>
       <div className="section-head">
         <div>
           <h1 className="section-title">Sources</h1>
-          <div className="section-sub">10 approved sources · Phase 1 · L1 collectors only</div>
+          <div className="section-sub">{sources.length} canonical sources · Phase 1 · L1 collectors only</div>
         </div>
         <div className="section-actions">
-          <span className="badge solid-ok">{sources.filter(s => s.health === 'good').length} good</span>
-          <span className="badge solid-warn">{sources.filter(s => s.health === 'degraded').length} degraded</span>
-          <span className="badge solid-fail">{sources.filter(s => s.health === 'disabled').length} disabled</span>
+          <span className="badge solid-accent">{summary.approved} approved</span>
+          <span className="badge solid-mute">{summary.candidate} candidate</span>
+          <span className="badge solid-ok">{summary.good} good</span>
+          <span className="badge solid-warn">{summary.degraded} degraded</span>
+          <span className="badge solid-fail">{summary.disabled} disabled</span>
         </div>
       </div>
       <div style={{ overflow: 'auto' }}>
@@ -270,6 +308,7 @@ const SourcesView = ({ sources, items, now }) => {
               <th>Domain</th>
               <th>Type</th>
               <th>Authority</th>
+              <th>Status</th>
               <th>Health</th>
               <th>14-day</th>
               <th style={{ textAlign: 'right' }}>Today</th>
@@ -288,6 +327,7 @@ const SourcesView = ({ sources, items, now }) => {
                   <SourceIcon type={s.type} /> {s.type}
                 </span></td>
                 <td><span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-2)' }}>{s.authority}</span></td>
+                <td><span className={`badge ${s.status === 'approved' ? 'solid-accent' : s.status === 'candidate' ? 'solid-mute' : 'solid-warn'}`}>{s.status}</span></td>
                 <td>
                   <Health value={s.health} />
                   {s.consecutive_failures > 0 && (
@@ -296,7 +336,7 @@ const SourcesView = ({ sources, items, now }) => {
                     </div>
                   )}
                 </td>
-                <td><Spark data={s.spark} max={maxSpark} /></td>
+                <td><Spark data={s.spark} max={summary.maxSpark} /></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' }}>
                   <span style={{ color: s.today_items === 0 ? 'var(--text-3)' : 'var(--text)' }}>{s.today_items}</span>
                 </td>
@@ -311,18 +351,13 @@ const SourcesView = ({ sources, items, now }) => {
     </div>
   );
 };
-window.SourcesView = SourcesView;
 
 // ============ STATS ============
 const Histogram = ({ items }) => {
-  // 20 buckets of 5 each
-  const buckets = Array(20).fill(0);
-  items.forEach(i => {
-    if (i.insight_score == null) return;
-    const b = Math.min(19, Math.floor(i.insight_score / 5));
-    buckets[b]++;
-  });
-  const max = Math.max(...buckets, 1);
+  const { buckets, max } = scoreHistogram(items);
+  const keptCount = filterByScoreRange(items, 30).length;
+  const stage2Count = filterByScoreRange(items, 75).length;
+  const dropCount = items.filter(i => (i.insight_score || 0) < 30).length;
   return (
     <div className="card">
       <h3 className="card-title">insight_score distribution · today</h3>
@@ -342,16 +377,16 @@ const Histogram = ({ items }) => {
       </div>
       <div style={{ display: 'flex', gap: 20, marginTop: 14, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>kept (≥30)</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600 }}>{items.filter(i => i.insight_score >= 30).length}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0 }}>kept (≥30)</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600 }}>{keptCount}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>stage 2 (≥75)</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--accent)' }}>{items.filter(i => i.insight_score >= 75).length}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0 }}>stage 2 (≥75)</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--accent)' }}>{stage2Count}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>retention drop</span>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--text-3)' }}>{items.filter(i => i.insight_score < 30).length}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0 }}>retention drop</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 20, fontWeight: 600, color: 'var(--text-3)' }}>{dropCount}</span>
         </div>
         <div style={{ marginLeft: 'auto', alignSelf: 'flex-end', fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--mono)' }}>
           n = {items.length}
@@ -362,34 +397,25 @@ const Histogram = ({ items }) => {
 };
 
 const CategoryByDomainMatrix = ({ items }) => {
-  const cats = ['vulnerability', 'exploit', 'research', 'product', 'engineering', 'discussion', 'tool', 'incident'];
-  const buckets = [
-    { label: '0–29', test: s => s < 30 },
-    { label: '30–49', test: s => s >= 30 && s < 50 },
-    { label: '50–74', test: s => s >= 50 && s < 75 },
-    { label: '75–89', test: s => s >= 75 && s < 90 },
-    { label: '90–100', test: s => s >= 90 },
-  ];
-  const present = cats.filter(c => items.some(i => i.category === c));
-  const max = Math.max(1, ...present.flatMap(c => buckets.map(b => items.filter(i => i.category === c && b.test(i.insight_score)).length)));
+  const matrix = useMemoV(() => categoryScoreMatrix(items), [items]);
   return (
     <div className="card">
       <h3 className="card-title">category × insight_score</h3>
       <div className="matrix">
         <div className="mh"></div>
-        {buckets.map(b => <div key={b.label} className="mh">{b.label}</div>)}
-        {present.map(cat => (
+        {matrix.buckets.map((bucket) => <div key={bucket.label} className="mh">{bucket.label}</div>)}
+        {matrix.categories.map(cat => (
           <React.Fragment key={cat}>
             <div className="mh row">{cat}</div>
-            {buckets.map(b => {
-              const n = items.filter(i => i.category === cat && b.test(i.insight_score)).length;
-              const intensity = n / max;
-              const isTop = b.label.startsWith('75') || b.label.startsWith('90');
+            {matrix.buckets.map((bucket) => {
+              const n = matrix.counts[cat][bucket.label];
+              const intensity = n / matrix.max;
+              const isTop = bucket.label.startsWith('75') || bucket.label.startsWith('90');
               const bg = n === 0 ? 'var(--panel-2)' :
                 isTop ? `color-mix(in oklab, var(--accent) ${10 + intensity * 70}%, var(--panel))` :
                   `color-mix(in oklab, var(--text-2) ${5 + intensity * 30}%, var(--panel))`;
               const color = n > 0 && intensity > 0.5 && isTop ? 'white' : 'var(--text)';
-              return <div key={cat + b.label} className="mc" style={{ background: bg, color }}>{n || ''}</div>;
+              return <div key={cat + bucket.label} className="mc" style={{ background: bg, color }}>{n || ''}</div>;
             })}
           </React.Fragment>
         ))}
@@ -399,27 +425,20 @@ const CategoryByDomainMatrix = ({ items }) => {
 };
 
 const CategoryList = ({ items }) => {
-  const map = {};
-  items.forEach(i => {
-    if (!i.category) return;
-    if (!map[i.category]) map[i.category] = { count: 0, domain: i.domain };
-    map[i.category].count++;
-  });
-  const arr = Object.entries(map).sort((a, b) => b[1].count - a[1].count);
-  const max = Math.max(...arr.map(([, v]) => v.count), 1);
+  const summary = useMemoV(() => categoryList(items), [items]);
   return (
     <div className="card">
       <h3 className="card-title">by category</h3>
       <div className="cat-list">
-        {arr.map(([name, v]) => (
-          <div key={name} className="cat-row">
+        {summary.entries.map((entry) => (
+          <div key={entry.category} className="cat-row">
             <div className="cat-name">
-              <span>{name}</span>
+              <span>{entry.category}</span>
             </div>
             <div className="cat-bar">
-              <div className={`cat-bar-fill ${v.domain}`} style={{ width: (v.count / max * 100) + '%' }} />
+              <div className={`cat-bar-fill ${entry.domain}`} style={{ width: `${safeRatio(entry.count, summary.max) * 100}%` }} />
             </div>
-            <div className="cat-count">{v.count}</div>
+            <div className="cat-count">{entry.count}</div>
           </div>
         ))}
       </div>
@@ -427,13 +446,12 @@ const CategoryList = ({ items }) => {
   );
 };
 
-const StatsView = ({ items, runs, sources, now }) => {
-  const high = items.filter(i => i.insight_score >= 75);
-  const conf = {
-    tentative: items.filter(i => i.confidence === 'tentative').length,
-    firm: items.filter(i => i.confidence === 'firm').length,
-    confirmed: items.filter(i => i.confidence === 'confirmed').length,
-  };
+export const StatsView = ({ items, runs, sources, now }) => {
+  const itemSummary = useMemoV(() => summarizeItems(items), [items]);
+  const sourceSummary = useMemoV(() => summarizeSources(sources), [sources]);
+  const currentRun = getActiveRun(runs);
+  const retention = useMemoV(() => retentionBuckets(items), [items]);
+  const usage = useMemoV(() => modelUsage(runs), [runs]);
   return (
     <div className="stats-wrap">
       <div className="stat-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
@@ -444,18 +462,18 @@ const StatsView = ({ items, runs, sources, now }) => {
         </div>
         <div className="stat">
           <div className="stat-label">High-value (≥75)</div>
-          <div className="stat-value" style={{ color: 'var(--accent)' }}>{high.length}</div>
+          <div className="stat-value" style={{ color: 'var(--accent)' }}>{itemSummary.highValue}</div>
           <div className="stat-delta">stage 2 analyzed</div>
         </div>
         <div className="stat">
           <div className="stat-label">Failed analyses</div>
-          <div className="stat-value">{runs[0].stats.stage1.failed}</div>
-          <div className="stat-delta down">{runs[0].stats.stage1.failed} model_parse_error</div>
+          <div className="stat-value">{currentRun?.stats.stage1.failed || 0}</div>
+          <div className="stat-delta down">{currentRun?.stats.stage1.failed || 0} model_parse_error</div>
         </div>
         <div className="stat">
           <div className="stat-label">Sources healthy</div>
-          <div className="stat-value">{sources.filter(s => s.health === 'good').length}<span style={{ fontSize: 18, color: 'var(--text-3)' }}> / {sources.length}</span></div>
-          <div className="stat-delta down">1 degraded</div>
+          <div className="stat-value">{sourceSummary.good}<span style={{ fontSize: 18, color: 'var(--text-3)' }}> / {sources.length}</span></div>
+          <div className={`stat-delta ${sourceSummary.degraded > 0 ? 'down' : 'up'}`}>{sourceSummary.degraded} degraded</div>
         </div>
       </div>
 
@@ -471,12 +489,13 @@ const StatsView = ({ items, runs, sources, now }) => {
           <h3 className="card-title">confidence breakdown · stage 2</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 6 }}>
             {['tentative', 'firm', 'confirmed'].map(c => {
-              const n = conf[c]; const total = conf.tentative + conf.firm + conf.confirmed || 1;
+              const n = itemSummary.confidence[c];
+              const total = itemSummary.confidence.tentative + itemSummary.confidence.firm + itemSummary.confidence.confirmed || 1;
               return (
                 <div key={c} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 40px', gap: 10, alignItems: 'center' }}>
                   <Confidence value={c} />
                   <div className="cat-bar">
-                    <div className="cat-bar-fill" style={{ width: (n / total * 100) + '%', background: c === 'confirmed' ? 'var(--accent)' : 'var(--text-2)' }} />
+                    <div className="cat-bar-fill" style={{ width: `${safeRatio(n, total) * 100}%`, background: c === 'confirmed' ? 'var(--accent)' : 'var(--text-2)' }} />
                   </div>
                   <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
                 </div>
@@ -492,24 +511,15 @@ const StatsView = ({ items, runs, sources, now }) => {
         <div className="card">
           <h3 className="card-title">retention buckets</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {[
-              { label: 'permanent (≥75)', range: [75, 101], color: 'var(--accent)' },
-              { label: '30 days (50–74)', range: [50, 75], color: 'var(--score-high)' },
-              { label: '10 days (30–49)', range: [30, 50], color: 'var(--score-mid)' },
-              { label: '5 days (10–29)', range: [10, 30], color: 'var(--score-low)' },
-              { label: 'delete (<10)', range: [0, 10], color: 'var(--text-4)' },
-            ].map(r => {
-              const n = items.filter(i => i.insight_score >= r.range[0] && i.insight_score < r.range[1]).length;
-              return (
-                <div key={r.label} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 40px', gap: 10, alignItems: 'center', fontSize: 13 }}>
-                  <span style={{ color: 'var(--text-2)' }}>{r.label}</span>
+            {retention.map((bucket) => (
+              <div key={bucket.label} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 40px', gap: 10, alignItems: 'center', fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-2)' }}>{bucket.label}</span>
                   <div className="cat-bar">
-                    <div className="cat-bar-fill" style={{ width: (n / items.length * 100) + '%', background: r.color }} />
+                    <div className="cat-bar-fill" style={{ width: `${bucket.ratio * 100}%`, background: bucket.color }} />
                   </div>
-                  <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
-                </div>
-              );
-            })}
+                  <span style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' }}>{bucket.count}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -523,14 +533,14 @@ const StatsView = ({ items, runs, sources, now }) => {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>stage 1 · nvidia</span>
             </div>
             <div className="timeline">
-              {[48, 54, 47, 63].map((v, i) => (
+              {usage.stage1.map((v, i) => (
                 <div key={i} className="timeline-bar">
-                  <div className="tb-stack s1" style={{ height: (v / 70 * 100) + '%' }} />
+                  <div className="tb-stack s1" style={{ height: `${safeRatio(v, Math.max(...usage.stage1, 1)) * 100}%` }} />
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)' }}>
-              <span>May 23</span><span>May 24</span><span>May 25</span><span>May 26</span>
+              {usage.labels.map((label) => <span key={label}>{label}</span>)}
             </div>
           </div>
           <div>
@@ -539,14 +549,14 @@ const StatsView = ({ items, runs, sources, now }) => {
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>stage 2 · nvidia</span>
             </div>
             <div className="timeline">
-              {[2, 8, 7, 9].map((v, i) => (
+              {usage.stage2.map((v, i) => (
                 <div key={i} className="timeline-bar">
-                  <div className="tb-stack" style={{ height: (v / 12 * 100) + '%' }} />
+                  <div className="tb-stack" style={{ height: `${safeRatio(v, Math.max(...usage.stage2, 1)) * 100}%` }} />
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-3)' }}>
-              <span>May 23</span><span>May 24</span><span>May 25</span><span>May 26</span>
+              {usage.labels.map((label) => <span key={label}>{label}</span>)}
             </div>
           </div>
         </div>
@@ -554,4 +564,3 @@ const StatsView = ({ items, runs, sources, now }) => {
     </div>
   );
 };
-window.StatsView = StatsView;

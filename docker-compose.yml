@@ -3,7 +3,7 @@ services:
     build: .
     network_mode: host
     env_file: .env
-    command: sh -c "$${API_COMMAND:-uvicorn src.main:app} --host $${API_HOST:-127.0.0.1} --port $${API_PORT:-8100}"
+    command: sh -c "$${API_COMMAND:-uvicorn src.main:app} --host $${API_HOST:-127.0.0.1} --port $${API_PORT:-8100} --loop asyncio"
     volumes:
       - /opt/blog/source/_posts:/opt/blog/source/_posts
     restart: unless-stopped

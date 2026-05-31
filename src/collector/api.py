@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,7 @@ from src.config import settings
 
 class GenericAPICollector(BaseCollector):
     async def fetch(self, since: datetime | None = None) -> list[RawItem]:
+        """Fetch and normalize records from a generic JSON API feed."""
         params = {}
         if since:
             params["since"] = since.isoformat()
@@ -50,6 +52,7 @@ class GenericAPICollector(BaseCollector):
 
 class HackerNewsCollector(BaseCollector):
     async def fetch(self, since: datetime | None = None) -> list[RawItem]:
+        """Fetch top Hacker News stories and filter them into RawItem records."""
         timeout = httpx.Timeout(float(self.config.get("timeout_s", settings.collector_timeout_s)))
         async with httpx.AsyncClient(
             timeout=timeout,
@@ -62,22 +65,33 @@ class HackerNewsCollector(BaseCollector):
             if not isinstance(story_ids, list):
                 raise ValueError("Hacker News top stories response must be a list")
 
-            items = []
             max_items = int(self.config.get("max_items", settings.collector_hn_max_items))
-            for story_id in story_ids[:max_items]:
-                item_resp = await client.get(f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json")
-                item_resp.raise_for_status()
-                story = item_resp.json()
-                if not isinstance(story, dict) or story.get("type") != "story":
-                    continue
-                raw_item = self._story_to_raw_item(story)
-                if since and raw_item.published_at and raw_item.published_at < since:
-                    continue
-                if not _matches_keywords(raw_item, self.config.get("keyword_filter") or []):
-                    continue
-                items.append(raw_item)
+            max_concurrency = int(self.config.get("max_concurrency", settings.collector_hn_max_concurrency))
+            sem = asyncio.Semaphore(max(1, max_concurrency))
+            stories = await asyncio.gather(
+                *[self._fetch_story(client, story_id, sem) for story_id in story_ids[:max_items]]
+            )
+
+        items = []
+        for story in stories:
+            if not isinstance(story, dict) or story.get("type") != "story":
+                continue
+            raw_item = self._story_to_raw_item(story)
+            if since and raw_item.published_at and raw_item.published_at < since:
+                continue
+            if not _matches_keywords(raw_item, self.config.get("keyword_filter") or []):
+                continue
+            items.append(raw_item)
 
         return items
+
+    async def _fetch_story(self, client: httpx.AsyncClient, story_id: int, sem: asyncio.Semaphore) -> dict[str, Any] | None:
+        """Fetch one Hacker News story payload under the configured concurrency limit."""
+        async with sem:
+            item_resp = await client.get(f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json")
+            item_resp.raise_for_status()
+            story = item_resp.json()
+            return story if isinstance(story, dict) else None
 
     def _story_to_raw_item(self, story: dict[str, Any]) -> RawItem:
         story_id = str(story.get("id"))
@@ -99,6 +113,7 @@ class HackerNewsCollector(BaseCollector):
 
 
 def _extract_records(data: Any) -> list[dict[str, Any]]:
+    """Extract the record list from common JSON API envelope shapes."""
     if isinstance(data, list):
         records = data
     elif isinstance(data, dict):

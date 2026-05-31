@@ -8,6 +8,7 @@ from src.config import settings
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Yield one async SQLAlchemy session per request."""
     from src.db import async_session
 
     async with async_session() as session:
@@ -15,6 +16,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def require_api_token(authorization: str | None = Header(default=None)) -> None:
+    """Reject requests whose bearer token does not match the configured API token."""
     if not settings.api_token:
         return
     expected = f"Bearer {settings.api_token}"

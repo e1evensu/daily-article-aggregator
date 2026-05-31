@@ -1,0 +1,137 @@
+[
+  {
+    "id": "security_nvd_cve",
+    "name": "NVD CVE Feed",
+    "domain": "security",
+    "type": "api",
+    "url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+    "authority": "official",
+    "fetch_strategy": "l1_api",
+    "auth_mode": "none",
+    "status": "approved",
+    "config_json": {
+      "collector": "nvd"
+    }
+  },
+  {
+    "id": "security_github_advisories",
+    "name": "GitHub Security Advisories",
+    "domain": "security",
+    "type": "github_api",
+    "url": "https://api.github.com/advisories",
+    "authority": "official",
+    "fetch_strategy": "l1_github",
+    "auth_mode": "bearer",
+    "status": "approved",
+    "config_json": {
+      "collector": "github_advisories"
+    }
+  },
+  {
+    "id": "security_portswigger",
+    "name": "PortSwigger Research",
+    "domain": "security",
+    "type": "rss",
+    "url": "https://portswigger.net/research/rss",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_rss",
+    "auth_mode": "none",
+    "status": "approved"
+  },
+  {
+    "id": "security_project_zero",
+    "name": "Project Zero Blog",
+    "domain": "security",
+    "type": "rss",
+    "url": "https://googleprojectzero.blogspot.com/feeds/posts/default",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_rss",
+    "auth_mode": "none",
+    "status": "approved"
+  },
+  {
+    "id": "security_exploitdb",
+    "name": "Exploit-DB",
+    "domain": "security",
+    "type": "rss",
+    "url": "https://www.exploit-db.com/rss.xml",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_rss",
+    "auth_mode": "none",
+    "status": "approved",
+    "config_json": {
+      "native_id_mode": "path_basename"
+    }
+  },
+  {
+    "id": "security_sechub",
+    "name": "SecHub API",
+    "domain": "security",
+    "type": "internal_api",
+    "url": "http://127.0.0.1:18210/api/feed",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_api",
+    "auth_mode": "internal",
+    "status": "candidate"
+  },
+  {
+    "id": "ai_aihot",
+    "name": "aihot API",
+    "domain": "ai",
+    "type": "internal_api",
+    "url": "http://127.0.0.1:18220/api/feed",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_api",
+    "auth_mode": "internal",
+    "status": "candidate"
+  },
+  {
+    "id": "ai_hackernews",
+    "name": "Hacker News Top",
+    "domain": "ai",
+    "type": "api",
+    "url": "https://hacker-news.firebaseio.com/v0/topstories.json",
+    "authority": "authoritative",
+    "fetch_strategy": "l1_api",
+    "auth_mode": "none",
+    "status": "approved",
+    "config_json": {
+      "collector": "hackernews",
+      "max_concurrency": 10,
+      "keyword_filter": [
+        "ai",
+        "llm",
+        "model",
+        "agent",
+        "security",
+        "vulnerability",
+        "cve"
+      ]
+    }
+  },
+  {
+    "id": "ai_arxiv",
+    "name": "arXiv cs.AI + cs.CR",
+    "domain": "ai",
+    "type": "rss",
+    "url": "https://export.arxiv.org/rss/cs.AI+cs.CR",
+    "authority": "official",
+    "fetch_strategy": "l1_rss",
+    "auth_mode": "none",
+    "status": "candidate",
+    "config_json": {
+      "native_id_mode": "arxiv"
+    }
+  },
+  {
+    "id": "ai_openai_blog",
+    "name": "OpenAI Blog",
+    "domain": "ai",
+    "type": "rss",
+    "url": "https://openai.com/news/rss.xml",
+    "authority": "official",
+    "fetch_strategy": "l1_rss",
+    "auth_mode": "none",
+    "status": "approved"
+  }
+]

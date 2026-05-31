@@ -51,7 +51,7 @@ services:
     build: .
     network_mode: host
     env_file: .env
-    command: uvicorn src.main:app --host 127.0.0.1 --port 8100
+    command: uvicorn src.main:app --host 127.0.0.1 --port 8100 --loop asyncio
     volumes:
       - /opt/blog/source/_posts:/opt/blog/source/_posts
 
@@ -65,6 +65,12 @@ services:
 ```
 
 注意：`network_mode: host` 下 volumes 仍然需要显式挂载，因为容器文件系统是隔离的。API 和 worker 都需要访问 Hexo 目录（worker 写入，API 可选读取验证）。
+
+Release image hygiene:
+- `.dockerignore` excludes `.env`, `.env.*`, `.venv`, caches, archive, and large reference docs from build context.
+- Dockerfile copies `src/` before `uv pip install .` so the hatchling package build sees the project package.
+- API uses `--loop asyncio` in Docker as well as systemd; `uvloop` is avoided because it hangs `asyncmy` on this long-haul DB link.
+- Verified 2026-05-31: `make verify-release` covers `docker-compose config --quiet`, `docker-compose build`, image `python run_pipeline.py --help`, env-backed image import of `src.main` / `src.scheduler.jobs`, and a temporary host-network API container on `127.0.0.1:18100` passing `/health` + DB-backed source detail before cleanup. Runtime cutover to compose is still pending.
 
 ## 4. Credentials (Confirmed)
 

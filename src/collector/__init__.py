@@ -2,6 +2,7 @@ from src.collector.api import GenericAPICollector, HackerNewsCollector
 from src.collector.catalog import (
     SourceCatalogEntry,
     as_source_model,
+    catalog_approved_source_ids,
     catalog_by_id,
     catalog_source_ids,
     load_source_catalog,
@@ -23,6 +24,7 @@ __all__ = [
     "SourceFetchResult",
     "SourceCatalogEntry",
     "as_source_model",
+    "catalog_approved_source_ids",
     "catalog_by_id",
     "catalog_source_ids",
     "collect_sources",

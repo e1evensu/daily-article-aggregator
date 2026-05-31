@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ log = logging.getLogger(__name__)
 
 
 async def daily_pipeline():
+    """Run one scheduled daily pipeline execution inside the lifecycle wrapper."""
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         sources = await load_approved_sources(session)
@@ -58,18 +60,25 @@ async def daily_pipeline():
     log.info("Daily pipeline finished: status=%s stats=%s", lifecycle.status, lifecycle.run.stats_json if lifecycle.run else None)
 
 
-def main():
+async def _serve():
+    """Start APScheduler on the current event loop and keep the process alive."""
+    # AsyncIOScheduler.start() needs a *running* loop (py3.10+), so start it
+    # from inside asyncio.run and then idle forever.
     scheduler = AsyncIOScheduler()
     minute, hour, *_ = settings.collect_cron.split()
     scheduler.add_job(daily_pipeline, "cron", hour=int(hour), minute=int(minute), id="daily_pipeline")
-    log.info("Scheduler started — daily pipeline at %02d:%02d UTC", hour, minute)
     scheduler.start()
-
-    import asyncio
+    log.info("Scheduler started — daily pipeline at %02d:%02d UTC", int(hour), int(minute))
     try:
-        asyncio.get_event_loop().run_forever()
-    except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
+        await asyncio.Event().wait()  # run until the process is stopped
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+def main():
+    """Run the scheduler entrypoint as a standalone process."""
+    import asyncio
+    asyncio.run(_serve())
 
 
 if __name__ == "__main__":

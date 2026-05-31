@@ -10,6 +10,7 @@ from src.config import settings
 
 class GitHubAdvisoryCollector(BaseCollector):
     async def fetch(self, since: datetime | None = None) -> list[RawItem]:
+        """Fetch GitHub security advisories and project them into RawItem records."""
         headers = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",

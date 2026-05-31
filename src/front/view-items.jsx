@@ -1,5 +1,21 @@
 // Items list + detail drawer
 const { useState: useStateI, useMemo: useMemoI, useEffect: useEffectI } = React;
+import {
+  Confidence,
+  Credibility,
+  DomainBadge,
+  Icon,
+  ItemMetaLine,
+  ScoreBar,
+  ScoreNum,
+  SourceIcon,
+  SourcePill,
+  Trend,
+  fmtAgo,
+  retentionFor,
+  scoreClass,
+} from './ui.jsx';
+import { filterItems, summarizeItems } from './selectors.js';
 
 const ItemRow = ({ item, source, selected, onClick, now }) => {
   const score = item.insight_score;
@@ -12,22 +28,7 @@ const ItemRow = ({ item, source, selected, onClick, now }) => {
       <div className="item-body">
         <h3 className="item-title">{item.title}</h3>
         {item.summary_zh && <p className="item-summary">{item.summary_zh}</p>}
-        <div className="item-meta">
-          <DomainBadge value={item.domain} />
-          {item.category && <span className="tag">{item.category}</span>}
-          <SourcePill source={source} />
-          <span className="dot-sep">·</span>
-          <span>{fmtAgo(item.published_at, now)}</span>
-          {item.also_seen_in && item.also_seen_in.length > 0 && (
-            <>
-              <span className="dot-sep">·</span>
-              <span className="also-seen">
-                <span className="also-seen-dot" />
-                also in {item.also_seen_in.length}
-              </span>
-            </>
-          )}
-        </div>
+        <ItemMetaLine item={item} source={source} now={now} />
       </div>
       <div className="item-side">
         {item.analysis_stage === 2 && <Confidence value={item.confidence} />}
@@ -40,10 +41,12 @@ const ItemRow = ({ item, source, selected, onClick, now }) => {
   );
 };
 
-const ItemDrawer = ({ item, source, onClose, sources, now }) => {
+const ItemDrawer = ({ item, source, onClose, sourceById, now }) => {
   if (!item) return null;
   const ret = retentionFor(item.insight_score);
-  const alsoIn = (item.also_seen_in || []).map(id => sources.find(s => s.id === id)).filter(Boolean);
+  const alsoIn = (item.also_seen_in || [])
+    .map(o => ({ occurrence: o, source: sourceById[o.source_id] }))
+    .filter(x => x.source);
   return (
     <>
       <div className={`drawer-mask ${item ? 'open' : ''}`} onClick={onClose} />
@@ -104,9 +107,9 @@ const ItemDrawer = ({ item, source, onClose, sources, now }) => {
               <span className="stage-num">STAGE 1</span>
               <span className="stage-title">Triage · classification & summary</span>
               <div className="stage-meta">
-                <span>{item.analysis_model}</span>
+                <span>{item.stage1_model}</span>
                 <span>·</span>
-                <span>{item.prompt_version}</span>
+                <span>{item.stage1_prompt_version}</span>
               </div>
             </div>
             <div className="stage-body">
@@ -134,7 +137,7 @@ const ItemDrawer = ({ item, source, onClose, sources, now }) => {
                 <span className="stage-num">STAGE 2</span>
                 <span className="stage-title">Deep analysis · score ≥ 75</span>
                 <div className="stage-meta">
-                  <span>deepseek-v4-pro</span><span>·</span><span>s2_v1</span>
+                  <span>{item.stage2_model}</span><span>·</span><span>{item.stage2_prompt_version}</span>
                 </div>
               </div>
               <div className="stage-body">
@@ -172,11 +175,12 @@ const ItemDrawer = ({ item, source, onClose, sources, now }) => {
             <>
               <h3>cross-source · also_seen_in</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {alsoIn.map(s => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--panel-2)', borderRadius: 6 }}>
+                {alsoIn.map(({ occurrence, source: s }) => (
+                  <div key={`${s.id}-${occurrence.url || occurrence.seen_at}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--panel-2)', borderRadius: 6 }}>
                     <SourceIcon type={s.type} />
                     <span style={{ fontSize: 13 }}>{s.name}</span>
-                    <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>{s.id}</span>
+                    {occurrence.url && <a className="tag" href={occurrence.url} target="_blank" rel="noreferrer">url</a>}
+                    <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>{fmtAgo(occurrence.seen_at, now)}</span>
                   </div>
                 ))}
               </div>
@@ -186,10 +190,18 @@ const ItemDrawer = ({ item, source, onClose, sources, now }) => {
           {/* metadata */}
           <h3>analysis metadata</h3>
           <div className="kv"><span className="k">analysis_stage</span><span className="v mono">{item.analysis_stage}</span></div>
-          <div className="kv"><span className="k">analysis_model</span><span className="v mono">{item.analysis_model}</span></div>
-          <div className="kv"><span className="k">analysis_provider</span><span className="v mono">{item.analysis_provider}</span></div>
-          <div className="kv"><span className="k">prompt_version</span><span className="v mono">{item.prompt_version}</span></div>
-          <div className="kv"><span className="k">analyzed_at</span><span className="v mono">{fmtAgo(item.analyzed_at, now)}</span></div>
+          <div className="kv"><span className="k">stage1_model</span><span className="v mono">{item.stage1_model}</span></div>
+          <div className="kv"><span className="k">stage1_provider</span><span className="v mono">{item.stage1_provider}</span></div>
+          <div className="kv"><span className="k">stage1_prompt_version</span><span className="v mono">{item.stage1_prompt_version}</span></div>
+          <div className="kv"><span className="k">stage1_analyzed_at</span><span className="v mono">{fmtAgo(item.stage1_analyzed_at, now)}</span></div>
+          {item.analysis_stage === 2 && (
+            <>
+              <div className="kv"><span className="k">stage2_model</span><span className="v mono">{item.stage2_model}</span></div>
+              <div className="kv"><span className="k">stage2_provider</span><span className="v mono">{item.stage2_provider}</span></div>
+              <div className="kv"><span className="k">stage2_prompt_version</span><span className="v mono">{item.stage2_prompt_version}</span></div>
+              <div className="kv"><span className="k">stage2_analyzed_at</span><span className="v mono">{fmtAgo(item.stage2_analyzed_at, now)}</span></div>
+            </>
+          )}
           <div className="kv"><span className="k">expires_at</span><span className="v mono">{ret.label}</span></div>
           <div className="kv"><span className="k">dedup_hash</span><span className="v mono">{item.id}</span></div>
         </div>
@@ -198,28 +210,18 @@ const ItemDrawer = ({ item, source, onClose, sources, now }) => {
   );
 };
 
-const ItemsView = ({ items, sources, now, tweaks }) => {
+export const ItemsView = ({ items, sources, now, tweaks }) => {
   const [filters, setFilters] = useStateI({ domain: 'all', minScore: 0, query: '' });
   const [sel, setSel] = useStateI(null);
+  const sourceById = useMemoI(
+    () => Object.fromEntries(sources.map((source) => [source.id, source])),
+    [sources],
+  );
+  const counts = useMemoI(() => summarizeItems(items), [items]);
 
   const filtered = useMemoI(() => {
-    let r = items.slice();
-    if (filters.domain !== 'all') r = r.filter(i => i.domain === filters.domain);
-    if (filters.minScore > 0) r = r.filter(i => (i.insight_score || 0) >= filters.minScore);
-    if (filters.query) {
-      const q = filters.query.toLowerCase();
-      r = r.filter(i => i.title.toLowerCase().includes(q) || (i.summary_zh || '').includes(filters.query));
-    }
-    if (!tweaks.showLow) r = r.filter(i => (i.insight_score || 0) >= 30);
-    r.sort((a, b) => (b.insight_score || 0) - (a.insight_score || 0));
-    return r;
-  }, [items, filters, tweaks.showLow]);
-
-  const counts = useMemoI(() => ({
-    all: items.length,
-    security: items.filter(i => i.domain === 'security').length,
-    ai: items.filter(i => i.domain === 'ai').length,
-  }), [items]);
+    return filterItems(items, filters, tweaks);
+  }, [items, filters, tweaks]);
 
   return (
     <>
@@ -249,7 +251,7 @@ const ItemsView = ({ items, sources, now, tweaks }) => {
           AI <span className="count">{counts.ai}</span>
         </button>
         <div className="divider-y" />
-        <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>min_score</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0 }}>min_score</span>
         <select className="select" value={filters.minScore} onChange={(e) => setFilters({ ...filters, minScore: +e.target.value })}>
           <option value={0}>any</option>
           <option value={30}>≥ 30 (kept)</option>
@@ -268,7 +270,7 @@ const ItemsView = ({ items, sources, now, tweaks }) => {
           <ItemRow
             key={item.id}
             item={item}
-            source={sources.find(s => s.id === item.source_id)}
+            source={sourceById[item.source_id]}
             selected={sel?.id === item.id}
             onClick={() => setSel(item)}
             now={now}
@@ -276,9 +278,7 @@ const ItemsView = ({ items, sources, now, tweaks }) => {
         ))}
       </div>
 
-      <ItemDrawer item={sel} source={sel && sources.find(s => s.id === sel.source_id)} onClose={() => setSel(null)} sources={sources} now={now} />
+      <ItemDrawer item={sel} source={sel && sourceById[sel.source_id]} onClose={() => setSel(null)} sourceById={sourceById} now={now} />
     </>
   );
 };
-
-window.ItemsView = ItemsView;

@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, func as sa_func, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.contracts import raise_api_error
+from src.api.contracts import raise_api_error, success_envelope, visible_source_filters
 from src.api.deps import get_db
 from src.config import settings
 from src.models.item import Item
@@ -14,47 +14,65 @@ router = APIRouter(tags=["sources"])
 
 
 @router.get("/sources")
-async def list_sources(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Source).order_by(Source.domain, Source.name))
-    sources = result.scalars().all()
-    data = []
-    for s in sources:
-        data.append(await _serialize(s, db))
-    return {"data": data, "meta": {"total": len(data)}}
+async def list_sources(request: Request, db: AsyncSession = Depends(get_db)):
+    """List visible sources plus today's counts and sparkline data in batched queries."""
+    # Batched to avoid an N+1 (the app is far from the DB; every round-trip is
+    # ~1-6s over the cross-border link). One query for sources, one for today's
+    # per-source counts, one for the spark histogram — 3 round-trips total
+    # instead of 1 + 2 per source.
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    spark_days = settings.source_spark_days
+    cutoff = now - timedelta(days=spark_days)
+
+    sources = (
+        await db.execute(
+            select(Source)
+            .where(*visible_source_filters())
+            .order_by(Source.domain, Source.name)
+        )
+    ).scalars().all()
+
+    today_rows = await db.execute(
+        select(Item.source_id, sa_func.count())
+        .where(Item.fetched_at >= today_start)
+        .group_by(Item.source_id)
+    )
+    today_by_src = {sid: count for sid, count in today_rows}
+
+    spark_rows = await db.execute(
+        select(Item.source_id, cast(Item.fetched_at, Date), sa_func.count())
+        .where(Item.fetched_at >= cutoff)
+        .group_by(Item.source_id, cast(Item.fetched_at, Date))
+    )
+    spark_by_src: dict[str, dict] = {}
+    for sid, day, count in spark_rows:
+        spark_by_src.setdefault(sid, {})[day] = count
+
+    data = build_source_views(sources, today_by_src, spark_by_src, now, spark_days)
+    return success_envelope(data, request=request, total=len(data))
 
 
 @router.get("/sources/{source_id}")
-async def get_source(source_id: str, db: AsyncSession = Depends(get_db)):
-    source = await db.get(Source, source_id)
-    if not source:
-        return {"error": {"code": "not_found", "message": "Source not found"}, "meta": {}}
-    return {"data": await _serialize(source, db), "meta": {}}
-
-
-@router.put("/sources/{source_id}")
-async def upsert_source(source_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
-    source = await db.get(Source, source_id)
-    if source is None:
-        source = Source(id=source_id)
-        db.add(source)
-
-    _apply_source_payload(source, payload)
-    await db.flush()
-    return {"data": await _serialize(source, db), "meta": {}}
-
-
-@router.patch("/sources/{source_id}")
-async def update_source(source_id: str, payload: dict, db: AsyncSession = Depends(get_db)):
-    source = await db.get(Source, source_id)
+async def get_source(source_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Source).where(
+            Source.id == source_id,
+            *visible_source_filters(),
+        )
+    )
+    source = result.scalar_one_or_none()
     if not source:
         raise_api_error("not_found", "Source not found", 404)
-
-    _apply_source_payload(source, payload, partial=True)
-    await db.flush()
-    return {"data": await _serialize(source, db), "meta": {}}
+    return success_envelope(await serialize_source(source, db), request=request)
 
 
-async def _serialize(s: Source, db: AsyncSession) -> dict:
+def _spark_series(day_counts: dict, now: datetime, spark_days: int) -> list[int]:
+    """Fill a dense sparkline series so missing days render as zero activity."""
+    return [day_counts.get((now - timedelta(days=spark_days - 1 - i)).date(), 0) for i in range(spark_days)]
+
+
+async def serialize_source(s: Source, db: AsyncSession) -> dict:
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -71,11 +89,10 @@ async def _serialize(s: Source, db: AsyncSession) -> dict:
         .order_by(cast(Item.fetched_at, Date))
     )
     day_counts = {row[0]: row[1] for row in spark_result}
-    spark = []
-    for i in range(spark_days):
-        d = (now - timedelta(days=spark_days - 1 - i)).date()
-        spark.append(day_counts.get(d, 0))
+    return build_source_view(s, today_count or 0, _spark_series(day_counts, now, spark_days))
 
+
+def build_source_view(s: Source, today_count: int, spark: list[int]) -> dict:
     return {
         "id": s.id,
         "name": s.name,
@@ -94,31 +111,15 @@ async def _serialize(s: Source, db: AsyncSession) -> dict:
     }
 
 
-def _apply_source_payload(source: Source, payload: dict, *, partial: bool = False) -> None:
-    required = ("name", "domain", "type", "url", "fetch_strategy", "authority")
-    if not partial:
-        missing = [field for field in required if field not in payload]
-        if missing:
-            raise_api_error("invalid_param", f"Missing source fields: {', '.join(missing)}", 400)
-
-    for field in required:
-        if field in payload:
-            value = payload[field]
-            if not isinstance(value, str) or not value.strip():
-                raise_api_error("invalid_param", f"{field} must be a non-empty string", 400)
-            setattr(source, field, value.strip())
-
-    for field in ("auth_mode", "status", "health"):
-        if field in payload:
-            value = payload[field]
-            if not isinstance(value, str) or not value.strip():
-                raise_api_error("invalid_param", f"{field} must be a non-empty string", 400)
-            setattr(source, field, value.strip())
-
-    if "is_active" in payload:
-        source.is_active = bool(payload["is_active"])
-    if "config_json" in payload:
-        config_json = payload["config_json"]
-        if config_json is not None and not isinstance(config_json, dict):
-            raise_api_error("invalid_param", "config_json must be an object", 400)
-        source.config_json = config_json
+def build_source_views(
+    sources: list[Source],
+    today_by_src: dict[str, int],
+    spark_by_src: dict[str, dict],
+    now: datetime,
+    spark_days: int,
+) -> list[dict]:
+    """Build source view models from batched counts and sparkline maps."""
+    return [
+        build_source_view(source, today_by_src.get(source.id, 0), _spark_series(spark_by_src.get(source.id, {}), now, spark_days))
+        for source in sources
+    ]

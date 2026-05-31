@@ -21,6 +21,7 @@ class FakeResult:
         self.item = item
 
     def scalar_one_or_none(self):
+        """Return the prepared item for fake scalar lookups."""
         return self.item
 
 
@@ -31,6 +32,7 @@ class FakeSession:
         self.added = []
 
     async def execute(self, stmt):
+        """Return fake dedup lookups or raise a configured DB failure."""
         if self.fail_on_execute:
             raise RuntimeError("db failed")
         where = list(stmt._where_criteria)[0]
@@ -38,10 +40,12 @@ class FakeSession:
         return FakeResult(self.existing_by_hash.get(dedup_hash))
 
     def add(self, item):
+        """Record inserted ORM items."""
         self.added.append(item)
 
 
 def _normalized(**overrides):
+    """Build a standard NormalizedItem payload for persistence tests."""
     values = {
         "id": "security_nvd_cve:CVE-1",
         "source_id": "security_nvd_cve",

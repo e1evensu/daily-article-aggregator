@@ -39,6 +39,7 @@ class ChatCompleter(Protocol):
         retries: int,
         retry_backoff_s: tuple[float, ...],
     ) -> ChatCompletionResult:
+        """Return one chat completion result for the supplied model and prompt."""
         ...
 
 
@@ -151,6 +152,7 @@ class Analyzer:
 
     @classmethod
     def nvidia_from_settings(cls) -> Analyzer:
+        """Build an Analyzer wired to the configured NVIDIA-compatible chat backend."""
         from src.config import settings
 
         return cls(
@@ -164,6 +166,7 @@ class Analyzer:
         )
 
     async def analyze_stage1(self, item: dict[str, Any], source: dict[str, Any]) -> Stage1Outcome:
+        """Run stage-1 analysis and normalize provider or parsing failures into outcomes."""
         analyzed_at = _ensure_utc(self._now_fn())
         messages = build_stage1_messages(item, source)
 
@@ -215,6 +218,7 @@ class Analyzer:
         source: dict[str, Any],
         also_seen_in: list[dict[str, Any]] | None = None,
     ) -> Stage2Outcome:
+        """Run stage-2 analysis and normalize provider or parsing failures into outcomes."""
         analyzed_at = _ensure_utc(self._now_fn())
         messages = build_stage2_messages(item, source, also_seen_in)
         source_authority = str(source.get("authority") or "regular")
@@ -259,6 +263,7 @@ class Analyzer:
         )
 
     async def generate_digest_overview(self, domain: str, items: list[dict[str, Any]]) -> DigestOverviewOutcome:
+        """Generate the overview paragraph used at the top of a daily digest."""
         analyzed_at = _ensure_utc(self._now_fn())
         messages = build_digest_overview_messages(domain, items)
 
@@ -307,6 +312,7 @@ class Analyzer:
         messages: list[dict[str, str]],
         policy: ModelPolicy,
     ) -> ChatCompletionResult:
+        """Dispatch one completion request using the supplied model and policy."""
         return await self.client.complete(
             model=model,
             messages=messages,
@@ -319,6 +325,7 @@ class Analyzer:
 
 
 def _repair_messages(messages: list[dict[str, str]], invalid_content: str) -> list[dict[str, str]]:
+    """Append a repair turn that asks the model to re-emit valid JSON only."""
     return [
         *messages,
         {"role": "assistant", "content": invalid_content},
@@ -337,6 +344,7 @@ def _utc_now() -> datetime:
 
 
 def _ensure_utc(value: datetime) -> datetime:
+    """Normalize naive or local datetimes into UTC before storing analysis timestamps."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)

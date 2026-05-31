@@ -17,9 +17,11 @@ class FakeScalarResult:
         self.value = value
 
     def scalar(self):
+        """Return the fake scalar value for advisory-lock queries."""
         return self.value
 
     def scalar_one_or_none(self):
+        """Return the fake scalar value for run lookups."""
         return self.value
 
 
@@ -32,6 +34,7 @@ class FakeSession:
         self.lock_calls = []
 
     async def execute(self, statement, params=None):
+        """Serve fake advisory-lock and run queries for lifecycle tests."""
         sql = str(statement)
         if "GET_LOCK" in sql:
             self.lock_calls.append(("get", params["name"]))
@@ -47,6 +50,7 @@ class FakeSession:
         return FakeScalarResult(None)
 
     def add(self, value):
+        """Record added run rows."""
         self.added.append(value)
 
 

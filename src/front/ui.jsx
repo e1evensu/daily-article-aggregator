@@ -2,7 +2,7 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 // ---------- icons (lucide-style) ----------
-const Icon = ({ name, size = 14, stroke = 1.6, className = '' }) => {
+export const Icon = ({ name, size = 14, stroke = 1.6, className = '' }) => {
   const props = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
     stroke: 'currentColor', strokeWidth: stroke, strokeLinecap: 'round', strokeLinejoin: 'round',
     className };
@@ -35,12 +35,11 @@ const Icon = ({ name, size = 14, stroke = 1.6, className = '' }) => {
     default: return null;
   }
 };
-window.Icon = Icon;
 
 // ---------- score helpers ----------
-const scoreClass = (s) => s == null ? 's-low' : s < 30 ? 's-low' : s < 50 ? 's-mid' : s < 75 ? 's-high' : 's-top';
+export const scoreClass = (s) => s == null ? 's-low' : s < 30 ? 's-low' : s < 50 ? 's-mid' : s < 75 ? 's-high' : 's-top';
 
-const ScoreNum = ({ value, suffix }) => {
+export const ScoreNum = ({ value, suffix }) => {
   if (value == null) return <span className="score-num s-low">—</span>;
   return (
     <span className={`score-num ${scoreClass(value)}`}>
@@ -48,9 +47,8 @@ const ScoreNum = ({ value, suffix }) => {
     </span>
   );
 };
-window.ScoreNum = ScoreNum;
 
-const ScoreBar = ({ value, threshold = 75 }) => {
+export const ScoreBar = ({ value, threshold = 75 }) => {
   const w = Math.max(0, Math.min(100, value || 0));
   return (
     <div className="score-bar" title={`insight_score = ${value}`}>
@@ -59,10 +57,9 @@ const ScoreBar = ({ value, threshold = 75 }) => {
     </div>
   );
 };
-window.ScoreBar = ScoreBar;
 
 // ---------- confidence ----------
-const Confidence = ({ value }) => {
+export const Confidence = ({ value }) => {
   if (!value) return null;
   const labels = { tentative: 'tentative', firm: 'firm', confirmed: 'confirmed' };
   return (
@@ -74,9 +71,8 @@ const Confidence = ({ value }) => {
     </span>
   );
 };
-window.Confidence = Confidence;
 
-const Trend = ({ value }) => {
+export const Trend = ({ value }) => {
   if (!value) return null;
   const map = {
     emerging: { icon: 'arrowUp', label: 'emerging' },
@@ -92,10 +88,9 @@ const Trend = ({ value }) => {
     </span>
   );
 };
-window.Trend = Trend;
 
 // ---------- health ----------
-const Health = ({ value, withLabel = true }) => {
+export const Health = ({ value, withLabel = true }) => {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
       <span className={`dot ${value}`} />
@@ -103,24 +98,21 @@ const Health = ({ value, withLabel = true }) => {
     </span>
   );
 };
-window.Health = Health;
 
 // ---------- credibility ----------
-const Credibility = ({ value }) => {
+export const Credibility = ({ value }) => {
   if (!value || value === 'unknown') return null;
   const cls = value === 'high' ? 'solid-ok' : value === 'medium' ? 'solid-warn' : 'solid-fail';
   return <span className={`badge ${cls}`}>cred · {value}</span>;
 };
-window.Credibility = Credibility;
 
 // ---------- source pill ----------
-const SourceIcon = ({ type }) => {
+export const SourceIcon = ({ type }) => {
   const map = { rss: 'rss', github_api: 'github', api: 'api', internal_api: 'database' };
   return <Icon name={map[type] || 'link'} size={11} />;
 };
-window.SourceIcon = SourceIcon;
 
-const SourcePill = ({ source }) => {
+export const SourcePill = ({ source }) => {
   if (!source) return null;
   return (
     <span className="source-pill">
@@ -129,18 +121,50 @@ const SourcePill = ({ source }) => {
     </span>
   );
 };
-window.SourcePill = SourcePill;
+
+export const buildById = (items) => Object.fromEntries(items.map((item) => [item.id, item]));
+
+export const countBy = (items, keyFn) => {
+  const counts = {};
+  items.forEach((item) => {
+    const key = keyFn(item);
+    if (key == null) return;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+};
+
+export const filterByScoreRange = (items, min, max = Infinity) =>
+  items.filter((item) => item.insight_score != null && item.insight_score >= min && item.insight_score < max);
+
+export const ItemMetaLine = ({ item, source, now, corroborationLabel = 'also in' }) => (
+  <div className="item-meta">
+    <DomainBadge value={item.domain} />
+    {item.category && <span className="tag">{item.category}</span>}
+    <SourcePill source={source} />
+    <span className="dot-sep">·</span>
+    <span>{fmtAgo(item.published_at, now)}</span>
+    {item.also_seen_in?.length > 0 && (
+      <>
+        <span className="dot-sep">·</span>
+        <span className="also-seen">
+          <span className="also-seen-dot" />
+          {corroborationLabel} {item.also_seen_in.length}
+        </span>
+      </>
+    )}
+  </div>
+);
 
 // ---------- domain badge ----------
-const DomainBadge = ({ value }) => {
+export const DomainBadge = ({ value }) => {
   if (!value) return null;
   const cls = value === 'security' ? 'solid-fail' : value === 'ai' ? 'solid-accent' : 'solid-mute';
   return <span className={`badge ${cls} dot`}>{value}</span>;
 };
-window.DomainBadge = DomainBadge;
 
 // ---------- run status badge ----------
-const RunStatus = ({ value }) => {
+export const RunStatus = ({ value }) => {
   const map = {
     running: ['solid-accent', 'running'],
     succeeded: ['solid-ok', 'succeeded'],
@@ -150,10 +174,10 @@ const RunStatus = ({ value }) => {
   const [cls, label] = map[value] || ['solid-mute', value];
   return <span className={`badge ${cls} dot`}>{label}</span>;
 };
-window.RunStatus = RunStatus;
 
 // ---------- relative time ----------
-const fmtAgo = (iso, now) => {
+export const fmtAgo = (iso, now) => {
+  // Keep relative-time rendering centralized so cards and drawers stay consistent.
   if (!iso) return '—';
   const d = (now.getTime() - new Date(iso).getTime()) / 60000;
   if (d < 1) return 'just now';
@@ -161,24 +185,24 @@ const fmtAgo = (iso, now) => {
   if (d < 60 * 24) return `${Math.round(d / 60)}h ago`;
   return `${Math.round(d / 60 / 24)}d ago`;
 };
-window.fmtAgo = fmtAgo;
 
-const fmtDur = (s) => {
+export const fmtDur = (s) => {
+  // Pipeline views use a compact duration format to avoid widening tables/cards.
   if (s < 60) return `${s.toFixed(1)}s`;
   if (s < 3600) return `${Math.round(s / 60)}m`;
   return `${(s / 3600).toFixed(1)}h`;
 };
-window.fmtDur = fmtDur;
 
-const fmtTime = (iso) => {
+export const fmtTime = (iso) => {
+  // Digest/run widgets display time-of-day only; date context is shown elsewhere.
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 };
-window.fmtTime = fmtTime;
 
 // ---------- retention computation ----------
-const retentionFor = (score) => {
+export const retentionFor = (score) => {
+  // Mirror backend retention policy in one place for all score-driven UI labels.
   if (score == null) return { days: null, label: 'pending' };
   if (score < 10) return { days: 0, label: 'delete' };
   if (score < 30) return { days: 5, label: '5 days' };
@@ -186,4 +210,3 @@ const retentionFor = (score) => {
   if (score < 75) return { days: 30, label: '30 days' };
   return { days: null, label: 'permanent' };
 };
-window.retentionFor = retentionFor;

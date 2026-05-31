@@ -1,5 +1,11 @@
 // App shell — sidebar + topbar + view router + tweaks
 const { useState: useStateApp, useEffect: useEffectApp, useMemo: useMemoApp } = React;
+import { FIXTURES } from './data.js';
+import { getActiveRun, safeRatio, summarizeSources } from './selectors.js';
+import { Icon, fmtAgo } from './ui.jsx';
+import { ItemsView } from './view-items.jsx';
+import { DigestView, RunsView, SourcesView, StatsView } from './view-other.jsx';
+import { TweaksPanel, TweakRadio, TweakSection, TweakToggle, useTweaks } from './tweaks-panel.jsx';
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "theme": "light",
@@ -14,26 +20,31 @@ const NAV = [
   { id: 'sources', label: 'Sources', icon: 'database' },
   { id: 'stats', label: 'Stats', icon: 'bar' },
 ];
+const NAV_BY_ID = Object.fromEntries(NAV.map((item) => [item.id, item]));
 
-function App() {
+// Root shell that wires fixtures, top-level navigation, and tweak controls together.
+export function App() {
+  // Root shell that routes between the prototype's major intelligence surfaces.
   const [view, setView] = useStateApp('items');
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
-  const { now, sources, items, runs, digest } = window.FIXTURES;
+  const { now, sources, items, runs, digest } = FIXTURES;
 
   // theme
   useEffectApp(() => {
     document.documentElement.setAttribute('data-theme', tweaks.theme || 'light');
   }, [tweaks.theme]);
 
-  const activeRun = runs[0];
+  const activeRun = getActiveRun(runs);
+  const sourceSummary = useMemoApp(() => summarizeSources(sources), [sources]);
   const counts = useMemoApp(() => ({
     items: items.length,
-    digest: 1,
+    digest: digest ? 1 : 0,
     runs: runs.filter(r => r.status === 'running').length || runs.length,
     sources: sources.length,
-  }), [items, runs, sources]);
+  }), [digest, items, runs, sources]);
 
   const openItem = (it) => {
+    // Jump to the items view first, then notify the drawer listener which item to open.
     setView('items');
     setTimeout(() => {
       const ev = new CustomEvent('open-item', { detail: it.id });
@@ -56,9 +67,9 @@ function App() {
           <div key={n.id} className={`nav-item ${view === n.id ? 'active' : ''}`} onClick={() => setView(n.id)}>
             <Icon name={n.icon} size={14} className="nav-icon" />
             <span>{n.label}</span>
-            {n.id === 'runs' && activeRun.status === 'running'
+            {n.id === 'runs' && activeRun?.status === 'running'
               ? <span className="nav-dot running" />
-              : n.id === 'sources' && sources.some(s => s.health === 'degraded')
+              : n.id === 'sources' && sourceSummary.degraded > 0
                 ? <span className="nav-dot warn" />
                 : <span className="nav-count">{
                   n.id === 'items' ? counts.items :
@@ -92,18 +103,29 @@ function App() {
         <div className="sidebar-foot">
           <div className="run-banner">
             <div className="run-banner-head">
-              <span className="dot running" />
-              <span>Active run</span>
-              <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>
-                {Math.round(activeRun.progress * 100)}%
-              </span>
+              <span className={`dot ${activeRun?.status === 'running' ? 'running' : 'warn'}`} />
+              <span>{activeRun ? 'Active run' : 'Run queue'}</span>
+              {activeRun && (
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-3)' }}>
+                  {Math.round(activeRun.progress * 100)}%
+                </span>
+              )}
             </div>
             <div className="run-progress">
-              <div className="run-progress-fill" style={{ width: activeRun.progress * 100 + '%' }} />
+              <div className="run-progress-fill" style={{ width: `${safeRatio(activeRun?.progress || 0, 1) * 100}%` }} />
             </div>
             <div className="run-banner-meta">
-              <span>{activeRun.id.split('_').pop()}</span>
-              <span>started {fmtAgo(activeRun.started_at, now)}</span>
+              {activeRun ? (
+                <>
+                  <span>{activeRun.id.split('_').pop()}</span>
+                  <span>started {fmtAgo(activeRun.started_at, now)}</span>
+                </>
+              ) : (
+                <>
+                  <span>no runs</span>
+                  <span>waiting for first pipeline execution</span>
+                </>
+              )}
             </div>
           </div>
           <button className="nav-item" style={{ width: '100%' }}
@@ -121,7 +143,7 @@ function App() {
           <div className="crumbs">
             <span>intel</span>
             <span className="sep">/</span>
-            <span className="here">{NAV.find(n => n.id === view)?.label}</span>
+            <span className="here">{NAV_BY_ID[view]?.label}</span>
           </div>
           <div className="topbar-right">
             <div className="search-box">

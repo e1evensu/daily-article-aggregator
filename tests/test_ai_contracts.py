@@ -31,6 +31,7 @@ class FakeCompleter:
         self.calls = []
 
     async def complete(self, **kwargs):
+        """Return queued fake model outputs while recording the completion call."""
         self.calls.append(kwargs)
         content = self.contents.pop(0)
         return ChatCompletionResult(provider="nvidia", model=kwargs["model"], content=content)

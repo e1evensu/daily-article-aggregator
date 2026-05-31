@@ -93,14 +93,14 @@ digest generation (爬完即生成)
 
 `src/front/` 包含 React CDN 原型（无构建步骤）。它是交互参考，不是 Phase 1 生产 dashboard，也不是数据契约来源。数据契约以 `.spec/data-model.md`、`.spec/source-catalog.md`、`.spec/api.md` 为准。
 
-当前前端原型审查状态：**needs sync before implementation**。
+当前前端原型审查状态：**synced to Phase 1 contract**。
 
-- 缺少 `styles.css`，入口页面不能按设计渲染。
-- Fixture 仍使用旧 source ID（如 `sec_nvd`）而非 catalog 的长 ID（如 `security_nvd_cve`）。
-- Fixture 仍使用旧分析字段（`analysis_model` / `prompt_version`），未拆成 `stage1_*` / `stage2_*`。
-- `also_seen_in` 仍是字符串数组，未按 data model 改为 source occurrence 对象数组。
-- Sources 视图把 10 个候选源显示为 approved，和 source approval gate 冲突。
-- Digest footer 展示的 OSS 路径不是 deployment SPEC 的 Hexo 主路径 + OSS 备份格式。
+- `styles.css` 已恢复，入口页面不再缺失样式资产。
+- Fixture 使用 `.spec/source-catalog.md` 的 canonical long source IDs。
+- Fixture 和展示字段使用 `stage1_*` / `stage2_*` 分段分析元数据。
+- `also_seen_in` 使用 source occurrence 对象数组 `{source_id,url,seen_at}`。
+- Sources 视图将 `status` 与 `health` 分开展示，不把 candidate/trial 当作 approved。
+- Digest 视图展示 API contract 中的 `hexo_path` 与 `oss_url`。
 
 | 文件 | 内容 |
 |---|---|
@@ -135,3 +135,35 @@ digest generation (爬完即生成)
 | 2026-05-26 | v0.7 | 明确前端原型不是契约来源；记录 fixture/schema/style/source-status 同步问题 |
 | 2026-05-26 | v0.6 | 补充 confidence 推导/trend signal 规则、API 概览、前端原型参考、Hexo 发布路径、关闭所有 open questions |
 | 2026-05-26 | v0.5 | 与 .spec/ 对齐：砍 channels/source_fetches，加 run lock/also_seen_in/stage-specific analysis metadata，确认基础设施，保留生产运行验证门槛 |
+
+## 注释规范
+
+当前仓库已经补过一轮函数级注释，但后续维护不应继续走“每个函数都机械写一句”的路线。注释规则如下：
+
+### 必须保留注释的地方
+
+- 模块入口、CLI 入口、异步 worker、scheduler、pipeline stage
+- API handler、状态机、阈值判断、重试逻辑、并发控制、去重、保留策略
+- 有副作用的 helper：写数据库、写文件、发请求、改状态、发事件
+- 测试里的 fixture builder、fake session、mock transport、复杂辅助函数
+
+### 可以豁免注释的函数
+
+只有同时满足以下条件时才允许不写：
+
+- 函数体不超过 3 行
+- 没有分支
+- 没有副作用
+- 没有异常语义
+- 函数名和类型已经完整表达意图
+
+### 测试代码规则
+
+- `test_*` 函数如果名字已经完整表达行为，可以不写注释
+- 非 `test_*` 的测试辅助函数和 fake 类方法，原则上应写注释
+
+### 清理规则
+
+- 保留解释“为什么这样做”“边界是什么”“失败语义是什么”的注释
+- 删除纯复述函数名或实现表象的注释
+- 模块级说明优先于成批重复的函数说明

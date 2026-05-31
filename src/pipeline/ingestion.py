@@ -37,6 +37,7 @@ def normalize_raw_item(
     fetched_at: datetime | None = None,
     now: datetime | None = None,
 ) -> NormalizedItem:
+    """Validate and normalize one collector item into the canonical ingestion shape."""
     now = _ensure_utc(now or datetime.now(timezone.utc))
     fetched_at = _ensure_utc(fetched_at or now)
     published_at = _ensure_utc(raw.published_at) if raw.published_at else None
@@ -81,6 +82,7 @@ def append_source_occurrence(
     url: str | None,
     seen_at: datetime,
 ) -> list[dict[str, Any]]:
+    """Append a new source occurrence unless the same source/url pair is already present."""
     occurrence = build_source_occurrence(source_id, url, seen_at)
     occurrences = list(also_seen_in or [])
     for existing in occurrences:
@@ -97,12 +99,14 @@ def recompute_confidence_after_dedup(
     source_authority: str,
     also_seen_in: list[dict[str, Any]] | None,
 ) -> str | None:
+    """Recompute confidence only for stage-2 items after cross-source corroboration changes."""
     if analysis_stage < 2:
         return current_confidence
     return derive_confidence(source_authority, also_seen_in)
 
 
 def _ensure_utc(value: datetime) -> datetime:
+    """Normalize naive or local datetimes into UTC for storage and comparisons."""
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
